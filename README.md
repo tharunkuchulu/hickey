@@ -14,7 +14,7 @@ with Petpooja: [docs/screen-inventory.md](docs/screen-inventory.md).
 | 4 | Supabase mirror (token-gated sync), restore from cloud, nightly local snapshots | code done — needs the Supabase project (docs/setup-cloud.md) |
 | 5 | Owner dashboard (Cloudflare Workers) | live at https://hickey.nalsar.workers.dev |
 | 6 | Menu management (items, variations, categories, add-ons) | done |
-| 7 | Windows installer, auto-update via GitHub Releases, autostart | released — v0.1.2 on GitHub Releases |
+| 7 | Windows installer, auto-update via GitHub Releases, autostart | released — v0.1.3 on GitHub Releases |
 
 Go-live steps for the cafe terminal: [docs/go-live-checklist.md](docs/go-live-checklist.md).
 

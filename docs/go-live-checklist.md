@@ -3,7 +3,7 @@
 ## A. Before you go to the cafe
 
 - [ ] Download the newest installer from https://github.com/tharunkuchulu/hickey/releases (currently
-      `Hickey-POS-Setup-0.1.2.exe`, 114 MB). Building locally also works: `pnpm --filter @hickey/pos dist`.
+      `Hickey-POS-Setup-0.1.3.exe`, 114 MB). Building locally also works: `pnpm --filter @hickey/pos dist`.
 - [ ] Have `GO-LIVE-VALUES.local.md` (project folder, not in git) with you: Supabase URL, anon key, DEVICE_TOKEN,
       dashboard URL — everything Settings → Cloud Sync asks for.
 - [ ] Copy the installer to a pen drive.
@@ -50,6 +50,6 @@
 
 ## F. Updates
 
-1. Bump `version` in `apps/pos/package.json`, commit, `git tag v0.1.3` (same number), `git push origin main --tags`.
+1. Bump `version` in `apps/pos/package.json`, commit, `git tag v0.1.4` (same number), `git push origin main --tags`.
 2. GitHub Actions builds the installer and publishes the Release (~8 min); every counter updates itself within
    6 hours (or ☰ → Check Updates) and installs on the next app close.
