@@ -19,3 +19,6 @@ apps/pos/scripts/out/
 apps/pos/release/
 apps/dashboard/dist/
 apps/pos/build/icon.png
+
+# local secrets for the terminal setup (never commit)
+GO-LIVE-VALUES.local.md

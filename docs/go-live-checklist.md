@@ -2,8 +2,10 @@
 
 ## A. Before you go to the cafe
 
-- [ ] Build the installer on your laptop: `pnpm --filter @hickey/pos dist` → `apps/pos/release/Hickey POS Setup 0.1.0.exe`
-      (or push a tag `v0.1.0` to GitHub and download it from Releases — see F).
+- [ ] Download the newest installer from https://github.com/tharunkuchulu/hickey/releases (currently
+      `Hickey-POS-Setup-0.1.2.exe`, 114 MB). Building locally also works: `pnpm --filter @hickey/pos dist`.
+- [ ] Have `GO-LIVE-VALUES.local.md` (project folder, not in git) with you: Supabase URL, anon key, DEVICE_TOKEN,
+      dashboard URL — everything Settings → Cloud Sync asks for.
 - [ ] Copy the installer to a pen drive.
 - [ ] Note the **last Petpooja bill number** from the owner portal (All Orders → newest Order No.; it was 22072 at 02:31 on 17 Sep).
 
@@ -26,7 +28,9 @@
       Printers → that printer → Printing preferences → paper size = 80 mm roll; make sure it's not paused.
       Keep "Print KOT ticket" on — the KOT slip is the customer's token, exactly like Petpooja.
 - [ ] **Billing User Profile** (Operations): change the Admin PIN, set the biller's PIN, add more billers.
-- [ ] **Cloud Sync**: follow `docs/setup-cloud.md` (can be done later — billing works without it).
+- [ ] **Cloud Sync**: Enable ✓ → paste Project URL, anon key and DEVICE_TOKEN from `GO-LIVE-VALUES.local.md` →
+      Save → **Test connection** → **Sync now**. Then open https://hickey.tharunvankayala.workers.dev on a phone
+      and check the test bills appear.
 
 ## D. Test with the staff (5 minutes)
 
@@ -46,7 +50,6 @@
 
 ## F. Updates
 
-1. `git init` in the project, commit, push to `github.com/tharunkuchulu/hickey`.
-2. Bump `version` in `apps/pos/package.json`, commit, `git tag v0.1.1`, `git push --tags`.
-3. GitHub Actions builds the installer and publishes the Release; every counter updates itself within
+1. Bump `version` in `apps/pos/package.json`, commit, `git tag v0.1.3` (same number), `git push origin main --tags`.
+2. GitHub Actions builds the installer and publishes the Release (~8 min); every counter updates itself within
    6 hours (or ☰ → Check Updates) and installs on the next app close.

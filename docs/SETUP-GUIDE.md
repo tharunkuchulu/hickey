@@ -46,7 +46,7 @@ git push --tags
 ```
 
 `git push --tags` starts the **release** Action (≈8 min). When it finishes, **Releases** on GitHub has
-`Hickey POS Setup 0.1.0.exe`. (Repo → Settings → Secrets → add `SUPABASE_URL` and `SUPABASE_ANON_KEY` so the
+`Hickey-POS-Setup-0.1.0.exe`. (Repo → Settings → Secrets → add `SUPABASE_URL` and `SUPABASE_ANON_KEY` so the
 keep-alive Action stops the free project from pausing.)
 
 Prefer to build locally instead? `pnpm install && pnpm --filter @hickey/pos dist` → `apps/pos/release/`.
@@ -66,7 +66,7 @@ Prefer to build locally instead? `pnpm install && pnpm --filter @hickey/pos dist
 
 ## 5. Install on the counter terminal (10 min)
 
-1. Copy `Hickey POS Setup 0.1.0.exe` to a pen drive → run it on the Scantech → Next → Install.
+1. Copy the newest `Hickey-POS-Setup-x.y.z.exe` from https://github.com/tharunkuchulu/hickey/releases to a pen drive → run it on the Scantech → Next → Install.
    A desktop shortcut appears; the app also auto-starts after every reboot.
 2. First launch creates the database with the real HICKEY NALSAR menu and two logins:
    **Admin — PIN 1234** (settings, menu, users, cancellations) · **biller — PIN 1111** (billing, orders, reports).
@@ -74,7 +74,7 @@ Prefer to build locally instead? `pnpm install && pnpm --filter @hickey/pos dist
    - **Outlet Details**: phone number (address is already filled).
    - **Billing & Calculations** → *Start bill numbers from* = last Petpooja bill number **+ 1** (e.g. 22073).
    - **Print**: choose the thermal printer (the "POS Printer Driver V7.17" device, usually `POS-80`), paper 80 mm → **Print test page**. No print? Windows → Printers → that printer → Printing preferences → paper size = 80 mm roll; make sure it isn't paused.
-   - **Cloud Sync**: Enable ✓ · Project URL · anon key · DEVICE_TOKEN → **Save settings** → **Test connection** → **Sync now**. Top-right dot turns green.
+   - **Cloud Sync**: Enable ✓ · Project URL · anon key · DEVICE_TOKEN (all three are in `GO-LIVE-VALUES.local.md` in the project folder — not in git) → **Save settings** → **Test connection** → **Sync now**. Top-right dot turns green.
 4. Operations → **Billing User Profile** → change the Admin PIN and the biller PIN (keep them private).
 5. Optional: if the screen flickers on this old Intel graphics, add ` --disable-gpu` to the shortcut's Target.
 
