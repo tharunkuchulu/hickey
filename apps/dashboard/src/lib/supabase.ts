@@ -41,3 +41,12 @@ export function supabase(): SupabaseClient {
 export function resetClient(): void {
   client = null
 }
+
+/** Turn Supabase auth errors into sentences the owner can act on. */
+export function friendlyAuthError(e: unknown): string {
+  const m = e instanceof Error ? e.message : String(e)
+  if (/rate limit/i.test(m)) return 'Email limit reached: the mail service allows only a few messages per hour. Wait an hour and try again (or ask your developer to enable custom SMTP).'
+  if (/invalid login credentials/i.test(m)) return 'Wrong email or password.'
+  if (/auth session missing/i.test(m)) return 'This link has expired or was already used. Request a new one.'
+  return m
+}

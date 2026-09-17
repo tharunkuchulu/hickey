@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { friendlyAuthError, supabase } from '../lib/supabase'
 
 /**
  * Owner account settings. Password changes happen here with no email involved (the signed-in session is
@@ -19,7 +19,7 @@ export function AccountScreen({ email }: { email: string }) {
     try {
       setMsg({ ok: true, text: await fn() })
     } catch (e) {
-      setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) })
+      setMsg({ ok: false, text: friendlyAuthError(e) })
     } finally {
       setBusy(false)
     }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { loadConfig, resetClient, saveConfig, supabase } from '../lib/supabase'
+import { friendlyAuthError, loadConfig, resetClient, saveConfig, supabase } from '../lib/supabase'
 
 type Mode = 'login' | 'forgot' | 'reset' | 'configure'
 
@@ -33,7 +33,7 @@ export function LoginScreen({ onSignedIn, initialMode = 'login' }: { onSignedIn:
       const m = await fn()
       if (m) setMsg(m)
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : String(e))
+      setMsg(friendlyAuthError(e))
     } finally {
       setBusy(false)
     }
