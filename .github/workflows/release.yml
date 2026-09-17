@@ -1,5 +1,9 @@
 # Build the Windows installer and publish it as a GitHub Release when a tag like v0.2.0 is pushed.
 # The installed app checks this repo's releases every 6 hours and updates itself (electron-updater).
+#
+# The release is created as a DRAFT before electron-builder runs and published after it finishes:
+# electron-builder uploads the .exe, .blockmap and latest.yml in parallel, and when no release exists
+# yet each upload may create its own — two releases on one tag break the download URLs.
 name: release
 on:
   push:
@@ -9,6 +13,8 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4   # version comes from "packageManager" in package.json
@@ -19,7 +25,18 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r typecheck && pnpm -r test
       - run: pnpm --filter @hickey/pos build
+      - name: Create draft release for this tag (if none exists)
+        shell: bash
+        run: |
+          tag="$GITHUB_REF_NAME"
+          existing=$(gh release view "$tag" --json id --jq .id 2>/dev/null || true)
+          if [ -n "$existing" ]; then echo "release $tag already exists ($existing)"; exit 0; fi
+          gh release create "$tag" --draft --title "${tag#v}" --notes "Hickey POS ${tag#v}" --target "$GITHUB_SHA"
       - run: pnpm --filter @hickey/pos exec electron-builder --win --publish always
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Publish the release
+        shell: bash
+        run: |
+          gh release edit "$GITHUB_REF_NAME" --draft=false
+          gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name'
