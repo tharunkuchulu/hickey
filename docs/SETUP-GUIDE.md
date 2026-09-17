@@ -25,9 +25,17 @@ Do the steps in order; each one says what to copy for the next.
    ```sql
    insert into org_members (org_id, user_id, role) values ('<ORG_ID>', '<USER_UUID>', 'owner');
    ```
-3. Password recovery works out of the box (Supabase sends the reset mail). After step 4 below, come back to
-   **Authentication → URL Configuration** and set **Site URL** = your dashboard URL and add
-   `https://hickey.nalsar.workers.dev/#reset` under **Redirect URLs** — otherwise the reset link lands on localhost.
+3. After step 4 below, come back to **Authentication → URL Configuration** and set **Site URL** = the dashboard
+   URL and add `https://hickey.nalsar.workers.dev/**` under **Redirect URLs** — otherwise mail links land on localhost.
+4. **Production email (do this before handing over).** Supabase's built-in mailer is for development: **2 mails per
+   hour** and it may refuse addresses outside your Supabase team — so "Forgot password" and invite mails to the cafe
+   owner can silently fail. Fix once: **Project Settings → Authentication → SMTP Settings → Enable custom SMTP**:
+   - Gmail: Host `smtp.gmail.com` · Port `587` · Username = a Gmail address · Password = a Google **App password**
+     (Google account → Security → 2-Step Verification → App passwords) · Sender email = that Gmail · Sender name `Hickey`.
+   - Or any free transactional provider (Brevo: 300 mails/day) with the SMTP values it shows.
+   Then **Authentication → Rate Limits → emails/h** can be raised (30 is plenty).
+5. The owner can change their own **password and sign-in email inside the dashboard** (Account tab) — the password
+   change needs no email at all, so it never depends on step 4.
 
 ## 3. Code hosting — GitHub (5 min)
 
@@ -93,7 +101,12 @@ Prefer to build locally instead? `pnpm install && pnpm --filter @hickey/pos dist
 - Expenses paid from the drawer → Operations → **Expense** (keeps Cash Flow right). No day-end needed.
 - Reports → ☰ → **Reports** (Excel / Print), or the dashboard from anywhere.
 - New app version: bump `version` in `apps/pos/package.json`, `git commit`, `git tag v0.1.1`, `git push --tags`. Terminals update themselves within 6 hours (or ☰ → Check Updates).
-- Handing the cloud account to the owner later: add their email as a second user (step 2), then Supabase **Project Settings → Transfer project** — nothing changes on the terminal.
+- Handing the dashboard to the owner: either sign in and use **Account → Change sign-in email** (confirmation mail
+  goes to the owner's address — needs step 2.4), then hand over the password and let them change it in Account; or
+  create them as a second user (step 2.1–2.2). Later, Supabase **Project Settings → Transfer project** moves the
+  whole project to their Supabase account — nothing changes on the terminal.
+- Cloud looks incomplete (menu missing, reports empty although bills exist)? Terminal → Settings → Cloud Sync →
+  **Re-upload all data** (admin).
 
 ## If something goes wrong
 
@@ -102,5 +115,6 @@ Prefer to build locally instead? `pnpm install && pnpm --filter @hickey/pos dist
 | "Test connection" fails | URL must look like `https://xxxx.supabase.co`; token is the one from `register_device` (run it again to get a new one) |
 | Dashboard says "No rows" | `org_members` row missing (step 2.2) or the POS hasn't synced yet |
 | Reset-password link opens localhost | Step 2.3 Site URL / Redirect URL |
+| "email rate limit exceeded" / reset mail never arrives | Step 2.4 custom SMTP (built-in mailer = 2/hour). Meanwhile: Account tab → Change password (no mail), or SQL `update auth.users set encrypted_password = extensions.crypt('NEW', extensions.gen_salt('bf')) where email = '...'` |
 | Printer prints blank or cuts early | Driver paper size 80 mm, or switch Settings → Print → 58 mm if the roll is narrow |
 | Terminal dies | Install on a new PC → Settings → Cloud Sync (same values) → Backup & Restore → **Restore from cloud** |
