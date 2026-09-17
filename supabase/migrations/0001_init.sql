@@ -134,12 +134,22 @@ begin
   end loop;
 end $$;
 
+-- Membership lookup for policies. SECURITY DEFINER so it bypasses RLS: a policy on org_members that selected
+-- from org_members would recurse ("infinite recursion detected in policy").
+create or replace function my_org_ids()
+returns setof uuid language sql security definer stable
+set search_path = public as $$
+  select org_id from org_members where user_id = auth.uid()
+$$;
+revoke all on function my_org_ids() from public, anon;
+grant execute on function my_org_ids() to authenticated;
+
 create policy orgs_member_read on orgs for select to authenticated
-  using (id in (select org_id from org_members where user_id = auth.uid()));
+  using (id in (select my_org_ids()));
 create policy org_members_member_read on org_members for select to authenticated
-  using (user_id = auth.uid() or org_id in (select org_id from org_members m where m.user_id = auth.uid() and m.role = 'owner'));
+  using (user_id = auth.uid() or org_id in (select my_org_ids()));
 create policy devices_member_read on devices for select to authenticated
-  using (org_id in (select org_id from org_members where user_id = auth.uid()));
+  using (org_id in (select my_org_ids()));
 
 do $$
 declare t text;
@@ -148,7 +158,7 @@ begin
     'kots','payments','cash_register_sessions','customers','item_notes','cash_movements','audit_log']
   loop
     execute format(
-      'create policy %I on %I for select to authenticated using (org_id in (select org_id from org_members where user_id = auth.uid()))',
+      'create policy %I on %I for select to authenticated using (org_id in (select my_org_ids()))',
       t || '_member_read', t);
   end loop;
 end $$;

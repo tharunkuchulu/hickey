@@ -10,6 +10,7 @@ Do the steps in order; each one says what to copy for the next.
 1. Go to https://supabase.com → **Start your project** → sign up (GitHub or email).
 2. **New project** → Name `hickey` · Region **Mumbai (ap-south-1)** · generate a database password (save it) · Plan **Free** → Create. Wait ~2 min.
 3. Left menu **SQL Editor** → **New query** → paste the whole file `supabase/migrations/0001_init.sql` → **Run**. (Creates tables, security rules, sync functions.)
+   Project created before 17 Sep 2026 14:30? Also run `supabase/migrations/0002_rls_no_recursion.sql` (fixes "infinite recursion detected in policy" on the dashboard).
 4. Same SQL editor, run and **copy the two results**:
    ```sql
    insert into orgs (name) values ('HICKEY NALSAR') returning id;     -- → ORG_ID
