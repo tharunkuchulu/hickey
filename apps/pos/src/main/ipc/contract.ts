@@ -105,6 +105,7 @@ export interface IpcContract {
   'menu:setItemActive': { req: { itemId: string; isActive: boolean }; res: void }
   'sync:status': { req: void; res: SyncStatusDto }
   'sync:now': { req: void; res: SyncStatusDto }
+  'sync:resyncAll': { req: void; res: SyncStatusDto }
   'sync:test': { req: AppSettings['sync']; res: { ok: boolean; message: string } }
   'sync:restore': { req: void; res: Record<string, number> }
   'backup:list': { req: void; res: BackupInfoDto[] }

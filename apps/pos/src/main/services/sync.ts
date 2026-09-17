@@ -96,6 +96,44 @@ export function initSync(settingsLoader: () => AppSettings): void {
   setTimeout(() => void syncNow(), 3_000)
 }
 
+/**
+ * Queue every local row for upload. The services only write the outbox for rows they change, so the seeded
+ * menu, users and tables would never reach the cloud (and "Restore from cloud" would come back without them).
+ * Called when sync is first enabled or the project/device changes; also behind "Re-upload all data".
+ */
+export function enqueueAllRows(): number {
+  const tables = {
+    users: schema.users,
+    categories: schema.categories,
+    items: schema.items,
+    item_variants: schema.itemVariants,
+    addon_groups: schema.addonGroups,
+    addons: schema.addons,
+    dining_tables: schema.diningTables,
+    orders: schema.orders,
+    order_items: schema.orderItems,
+    kots: schema.kots,
+    payments: schema.payments,
+    cash_register_sessions: schema.cashRegisterSessions,
+    customers: schema.customers,
+    item_notes: schema.itemNotes,
+    cash_movements: schema.cashMovements,
+    audit_log: schema.auditLog
+  } satisfies Record<(typeof SYNCED_TABLES)[number], unknown>
+  let n = 0
+  getDb().transaction((tx) => {
+    for (const t of SYNCED_TABLES) {
+      const rows = tx.select().from(tables[t]).all() as Array<Record<string, unknown> & { id: string }>
+      for (const row of rows) {
+        tx.insert(syncOutbox).values({ tableName: t, rowId: row.id, op: 'upsert', payload: row, createdAt: nowIso() }).run()
+        n++
+      }
+    }
+  })
+  setState({})
+  return n
+}
+
 /** Push everything pending. Safe to call often; concurrent calls coalesce. */
 export async function syncNow(opts: { force?: boolean } = {}): Promise<SyncStatus> {
   const s = loadSettings().sync

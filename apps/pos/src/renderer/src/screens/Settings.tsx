@@ -189,6 +189,20 @@ export function SettingsScreen() {
               >
                 Sync now
               </button>
+              <button
+                disabled={working || dirty}
+                title="Queues every local row again (menu, users, all bills) — use after restoring or when the cloud looks incomplete"
+                onClick={async () => {
+                  setWorking(true)
+                  const st = await invoke('sync:resyncAll')
+                  setSyncStatus(st)
+                  setWorking(false)
+                  st.state === 'synced' ? toast.success('All data re-uploaded') : toast.error(st.error ?? `Sync ${st.state}`)
+                }}
+                className="px-4 rounded border border-gray-300 bg-white font-medium disabled:opacity-50"
+              >
+                Re-upload all data
+              </button>
               {syncStatus && (
                 <span className="text-sm text-gray-600">
                   Status: <b className="capitalize">{syncStatus.state}</b> · {syncStatus.pending} pending

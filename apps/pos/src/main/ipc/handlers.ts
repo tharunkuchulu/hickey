@@ -12,7 +12,7 @@ import * as ordersSvc from '../services/orders'
 import { reportToCsv, runReport } from '../services/reports'
 import { reportHtml } from '../services/report-print'
 import { backupNow, listBackups } from '../services/backup'
-import { getSyncStatus, kickSync, restoreFromCloud, syncNow, testSync } from '../services/sync'
+import { enqueueAllRows, getSyncStatus, kickSync, restoreFromCloud, syncNow, testSync } from '../services/sync'
 import { printHtml, testPrint } from '../services/printer'
 import { billHtml, kotHtml } from '../services/receipts'
 import type { IpcChannel, IpcReq, IpcRes, MenuSnapshot, OrderActionResult, SessionUser } from './contract'
@@ -116,11 +116,18 @@ export function registerIpcHandlers(): void {
 
   handle('settings:set', (next) => {
     const value = appSettingsSchema.parse(next)
+    const prev = loadSettings().sync
     db()
       .insert(settings)
       .values({ key: 'app', value, updatedAt: nowIso() })
       .onConflictDoUpdate({ target: settings.key, set: { value, updatedAt: nowIso() } })
       .run()
+    // First enable, or a different project/device: the cloud needs everything, not just future changes.
+    const n = value.sync
+    if (n.enabled && n.deviceToken && (!prev.enabled || prev.deviceToken !== n.deviceToken || prev.supabaseUrl !== n.supabaseUrl)) {
+      enqueueAllRows()
+      kickSync()
+    }
     return value
   })
 
@@ -327,6 +334,11 @@ export function registerIpcHandlers(): void {
 
   handle('sync:status', () => getSyncStatus())
   handle('sync:now', () => syncNow({ force: true }))
+  handle('sync:resyncAll', async () => {
+    if (currentUser?.role !== 'admin') throw new Error('Only an admin can re-upload')
+    enqueueAllRows()
+    return syncNow({ force: true })
+  })
   handle('sync:test', (sync) => testSync(sync))
   handle('sync:restore', async () => {
     if (currentUser?.role !== 'admin') throw new Error('Only an admin can restore')
