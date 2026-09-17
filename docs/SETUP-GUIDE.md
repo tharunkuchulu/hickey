@@ -51,15 +51,17 @@ keep-alive Action stops the free project from pausing.)
 
 Prefer to build locally instead? `pnpm install && pnpm --filter @hickey/pos dist` → `apps/pos/release/`.
 
-## 4. Owner dashboard — Cloudflare Pages (5 min)
+## 4. Owner dashboard — Cloudflare Workers (5 min)
 
-1. https://dash.cloudflare.com → sign up → **Workers & Pages → Create → Pages → Connect to Git** → pick `tharunkuchulu/hickey`.
-2. Build settings:
-   - Framework preset: **None**
+1. https://dash.cloudflare.com → sign up → **Workers & Pages → Create → Workers → Import a repository** → pick `tharunkuchulu/hickey`.
+2. Build settings (Settings → Builds → Build configuration):
+   - **Root directory: leave EMPTY** (repo root — `dist` is created by the build, so it must not be the root)
    - Build command: `pnpm install && pnpm --filter @hickey/dashboard build`
-   - Build output directory: `apps/dashboard/dist`
-   - Environment variables: `VITE_SUPABASE_URL` = Project URL · `VITE_SUPABASE_ANON_KEY` = anon key · `NODE_VERSION` = `22`
-3. **Save and Deploy** → you get `https://hickey-xxxx.pages.dev`. Open it → sign in with the owner email/password.
+   - Deploy command: `npx wrangler deploy --config apps/dashboard/wrangler.jsonc`
+   - Build variables: `VITE_SUPABASE_URL` = Project URL · `VITE_SUPABASE_ANON_KEY` = anon key · `NODE_VERSION` = `22`
+   - API token: pick / create the build token Cloudflare offers (needed for the deploy step)
+3. **Save** (the card has its own Save button) → Deployments → **Retry build** if one already failed.
+   You get `https://hickey.<your-subdomain>.workers.dev`. Open it → sign in with the owner email/password.
    Now do step 2.3 (Site URL / Redirect URL) with this address.
 
 ## 5. Install on the counter terminal (10 min)

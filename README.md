@@ -12,7 +12,7 @@ with Petpooja: [docs/screen-inventory.md](docs/screen-inventory.md).
 | 2 | Billing (Save & Print, KOT, Hold, Not Paid, Part), Orders, Live View, receipts | done |
 | 3 | Reports (11), Billing User Profile, Cash Flow (expense / withdrawal / top-up), Item On/Off | done |
 | 4 | Supabase mirror (token-gated sync), restore from cloud, nightly local snapshots | code done — needs the Supabase project (docs/setup-cloud.md) |
-| 5 | Owner dashboard (Cloudflare Pages) | code done — needs Supabase + deploy |
+| 5 | Owner dashboard (Cloudflare Workers) | code done — needs Supabase + deploy |
 | 6 | Menu management (items, variations, categories, add-ons) | done |
 | 7 | Windows installer, auto-update via GitHub Releases, autostart | done — needs the GitHub repo + first tag |
 
@@ -22,7 +22,7 @@ Go-live steps for the cafe terminal: [docs/go-live-checklist.md](docs/go-live-ch
 
 ```
 apps/pos          Electron + React desktop app (the billing counter)
-apps/dashboard    Owner web dashboard (Vite SPA, Supabase auth) → Cloudflare Pages
+apps/dashboard    Owner web dashboard (Vite SPA, Supabase auth) → Cloudflare Workers
 packages/shared   Money/time/ID helpers, zod schemas, analytics shared by both apps
 packages/db       Drizzle SQLite schema, migrations, real-menu seed
 supabase/         Cloud mirror schema + RLS + sync functions (run once in the SQL editor)
@@ -42,7 +42,7 @@ pnpm dev                           # POS with hot reload
 pnpm -r typecheck && pnpm -r test  # strict TS + unit tests (money maths, DB, analytics)
 pnpm --filter @hickey/pos smoke    # end-to-end smoke test against a running app (start it with --remote-debugging-port=9222)
 pnpm --filter @hickey/pos dist     # Windows installer → apps/pos/release/
-pnpm --filter @hickey/dashboard build   # dashboard → apps/dashboard/dist (deploy to Cloudflare Pages)
+pnpm --filter @hickey/dashboard build   # dashboard → apps/dashboard/dist (deployed by Cloudflare Workers git builds)
 pnpm db:generate                   # regenerate SQL migrations after editing packages/db/src/schema
 ```
 
