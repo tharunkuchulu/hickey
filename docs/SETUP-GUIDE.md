@@ -26,7 +26,7 @@ Do the steps in order; each one says what to copy for the next.
    ```
 3. Password recovery works out of the box (Supabase sends the reset mail). After step 4 below, come back to
    **Authentication → URL Configuration** and set **Site URL** = your dashboard URL and add
-   `https://<your-dashboard-url>/#reset` under **Redirect URLs** — otherwise the reset link lands on localhost.
+   `https://hickey.tharunvankayala.workers.dev/#reset` under **Redirect URLs** — otherwise the reset link lands on localhost.
 
 ## 3. Code hosting — GitHub (5 min)
 
@@ -61,7 +61,7 @@ Prefer to build locally instead? `pnpm install && pnpm --filter @hickey/pos dist
    - Build variables: `VITE_SUPABASE_URL` = Project URL · `VITE_SUPABASE_ANON_KEY` = anon key · `NODE_VERSION` = `22`
    - API token: pick / create the build token Cloudflare offers (needed for the deploy step)
 3. **Save** (the card has its own Save button) → Deployments → **Retry build** if one already failed.
-   You get `https://hickey.<your-subdomain>.workers.dev`. Open it → sign in with the owner email/password.
+   Live URL for HICKEY NALSAR: **https://hickey.tharunvankayala.workers.dev** — open it → sign in with the owner email/password.
    Now do step 2.3 (Site URL / Redirect URL) with this address.
 
 ## 5. Install on the counter terminal (10 min)
