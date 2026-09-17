@@ -4,13 +4,15 @@ import { DashboardScreen } from './screens/Dashboard'
 import { LoginScreen } from './screens/Login'
 import { OrdersScreen } from './screens/Orders'
 import { ReportsScreen } from './screens/Reports'
+import { AccountScreen } from './screens/Account'
 
-type Screen = 'dashboard' | 'orders' | 'reports'
+type Screen = 'dashboard' | 'orders' | 'reports' | 'account'
 
 const NAV: Array<{ id: Screen; label: string }> = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'orders', label: 'All Orders' },
-  { id: 'reports', label: 'Reports' }
+  { id: 'reports', label: 'Reports' },
+  { id: 'account', label: 'Account' }
 ]
 
 // Links from older reset mails look like '/#reset#access_token=...'; fold the double hash so the Supabase
@@ -79,6 +81,7 @@ export default function App() {
         {screen === 'dashboard' && <DashboardScreen />}
         {screen === 'orders' && <OrdersScreen />}
         {screen === 'reports' && <ReportsScreen />}
+        {screen === 'account' && <AccountScreen email={email} />}
       </main>
     </div>
   )
