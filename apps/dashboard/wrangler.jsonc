@@ -1,0 +1,11 @@
+// Cloudflare Workers config for the owner dashboard (static assets only, no server code).
+// Build: pnpm install && pnpm --filter @hickey/dashboard build   →   dist/
+// Deploy: npx wrangler deploy --config apps/dashboard/wrangler.jsonc   (run from the repo root)
+{
+  "name": "hickey",
+  "compatibility_date": "2026-01-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}

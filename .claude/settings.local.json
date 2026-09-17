@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(corepack enable 2>&1)",
+      "PowerShell(corepack prepare pnpm@9 --activate 2>&1)",
+      "PowerShell(pnpm --version)",
+      "PowerShell(npm install -g pnpm@9 2>&1)",
+      "PowerShell(foreach \\($p in @\\(\"electron\",\"electron-vite\",\"electron-builder\",\"electron-updater\",\"vite\",\"react\",\"react-dom\",\"typescript\",\"tailwindcss\",\"@tailwindcss/vite\",\"drizzle-orm\",\"drizzle-kit\",\"better-sqlite3\",\"zod\",\"zustand\",\"@supabase/supabase-js\",\"vitest\",\"@vitejs/plugin-react\",\"react-router\",\"@types/better-sqlite3\",\"@types/react\",\"@types/react-dom\",\"@types/node\",\"uuid\",\"dayjs\"\\)\\) { $v = npm view $p version 2>$null; \"$p = $v\" })",
+      "WebFetch(domain:api.github.com)",
+      "PowerShell(npm view better-sqlite3@13.0.3 optionalDependencies dependencies scripts engines --json)"
+    ]
+  }
+}

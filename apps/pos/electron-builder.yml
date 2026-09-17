@@ -1,0 +1,37 @@
+appId: com.hickey.pos
+productName: Hickey POS
+copyright: Copyright © 2026 Hickey
+directories:
+  buildResources: build
+  output: release
+files:
+  - out/**
+  - package.json
+  - "!**/*.map"
+  # better-sqlite3 ships prebuilds for every OS; only the Windows x64 one is needed.
+  - "!**/node_modules/better-sqlite3/prebuilds/!(win32-x64).node"
+  - "!**/node_modules/better-sqlite3/{src,deps,build}/**"
+extraResources:
+  - from: ../../packages/db/migrations
+    to: migrations
+asarUnpack:
+  - "**/node_modules/better-sqlite3/**"
+# better-sqlite3 v13 ships N-API prebuilds; no compiler needed on the build machine.
+npmRebuild: false
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.png
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  runAfterFinish: true
+  shortcutName: Hickey POS
+publish:
+  provider: github
+  owner: tharunkuchulu
+  repo: hickey
+  releaseType: release

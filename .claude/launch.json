@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dashboard-preview",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@hickey/dashboard", "preview", "--port", "4173", "--strictPort"],
+      "port": 4173
+    }
+  ]
+}

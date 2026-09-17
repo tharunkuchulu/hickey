@@ -1,0 +1,25 @@
+# Build the Windows installer and publish it as a GitHub Release when a tag like v0.2.0 is pushed.
+# The installed app checks this repo's releases every 6 hours and updates itself (electron-updater).
+name: release
+on:
+  push:
+    tags: ["v*"]
+jobs:
+  windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4   # version comes from "packageManager" in package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r typecheck && pnpm -r test
+      - run: pnpm --filter @hickey/pos build
+      - run: pnpm --filter @hickey/pos exec electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"

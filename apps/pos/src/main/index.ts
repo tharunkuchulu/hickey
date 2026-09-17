@@ -1,0 +1,96 @@
+import { app, BrowserWindow, shell } from 'electron'
+import { autoUpdater } from 'electron-updater'
+import { join } from 'node:path'
+import { closeDatabase, initDatabase } from './db'
+import { loadSettings, registerIpcHandlers } from './ipc/handlers'
+import { scheduleDailyBackup } from './services/backup'
+import { initSync } from './services/sync'
+
+// Fixed data folder (%APPDATA%\hickey-pos) so backups/restore docs never depend on the package name.
+app.setPath('userData', join(app.getPath('appData'), 'hickey-pos'))
+
+// The POS terminal has an Intel HD 4000; if the UI flickers, disable GPU compositing.
+if (process.env.HICKEY_DISABLE_GPU === '1' || process.argv.includes('--disable-gpu')) app.disableHardwareAcceleration()
+
+function createWindow(): BrowserWindow {
+  const win = new BrowserWindow({
+    width: 1366,
+    height: 768,
+    minWidth: 1024,
+    minHeight: 700,
+    show: false,
+    autoHideMenuBar: true,
+    backgroundColor: '#f3f4f6',
+    title: 'Hickey POS',
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      spellcheck: false
+    }
+  })
+
+  win.once('ready-to-show', () => {
+    win.show()
+    if (app.isPackaged) win.maximize()
+  })
+
+  // Never navigate the POS window away; open external links in the OS browser.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    void shell.openExternal(url)
+    return { action: 'deny' }
+  })
+
+  if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
+    void win.loadURL(process.env.ELECTRON_RENDERER_URL)
+  } else {
+    void win.loadFile(join(__dirname, '../renderer/index.html'))
+  }
+  return win
+}
+
+// Only one POS instance per machine.
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    const win = BrowserWindow.getAllWindows()[0]
+    if (win) {
+      if (win.isMinimized()) win.restore()
+      win.focus()
+    }
+  })
+
+  app.whenReady().then(() => {
+    app.setAppUserModelId('com.hickey.pos')
+    initDatabase()
+    registerIpcHandlers()
+    createWindow()
+    initSync(loadSettings)
+    scheduleDailyBackup(() => loadSettings().billing.dayStartMinutes)
+
+    if (app.isPackaged) {
+      // Counter PCs get the app back automatically after a reboot / power cut.
+      app.setLoginItemSettings({ openAtLogin: true, name: 'Hickey POS' })
+      // Updates come from GitHub Releases (electron-builder publish config); silent download, install on quit.
+      autoUpdater.autoDownload = true
+      autoUpdater.autoInstallOnAppQuit = true
+      autoUpdater.on('error', (err) => console.error('[updater]', err.message))
+      autoUpdater.on('update-downloaded', (info) => {
+        for (const w of BrowserWindow.getAllWindows()) w.webContents.send('event:update', { version: info.version })
+      })
+      setTimeout(() => void autoUpdater.checkForUpdates().catch(() => undefined), 15_000)
+      setInterval(() => void autoUpdater.checkForUpdates().catch(() => undefined), 6 * 60 * 60_000)
+    }
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    })
+  })
+
+  app.on('window-all-closed', () => {
+    closeDatabase()
+    app.quit()
+  })
+}

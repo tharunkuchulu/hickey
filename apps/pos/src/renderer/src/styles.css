@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+/* Petpooja-like palette (see docs/screen-inventory.md → Colours). */
+@theme {
+  --color-brand-50: #fbeef2;
+  --color-brand-100: #f3d5dd;
+  --color-brand-500: #a62b3f;
+  --color-brand-600: #8b1a3b;
+  --color-brand-700: #6e1330;
+  --color-navy-800: #1e2a47;
+  --color-navy-900: #151d33;
+  --color-rail: #3f3f3f;
+  --color-rail-hover: #4b4b4b;
+  --color-red: #c8102e;
+  --color-dark: #333333;
+  --color-help: #fde8ec;
+  --color-cardblue: #cfe3f5;
+  --color-pill: #1e6fd9;
+  --color-ready: #f0873a;
+  --color-veg: #16a34a;
+  --color-nonveg: #dc2626;
+  --color-egg: #eab308;
+  --font-sans: "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #f3f4f6;
+  color: #111827;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+/* Touch targets: nothing interactive smaller than 44px unless explicitly compact. */
+button, [role="button"] { min-height: 44px; }
+input, select, textarea { min-height: 44px; font-size: 16px; }
+input, textarea { user-select: text; -webkit-user-select: text; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
+
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.toast { animation: toast-in 150ms ease-out; }
