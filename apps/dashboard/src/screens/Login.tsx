@@ -151,6 +151,7 @@ export function LoginScreen({ onSignedIn, initialMode = 'login' }: { onSignedIn:
             }}
             className="space-y-3"
           >
+            <p className="text-sm text-gray-600">Choose the password you will use to sign in (at least 8 characters).</p>
             <label className="block text-sm text-gray-600">
               New password
               <input className={input} type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />

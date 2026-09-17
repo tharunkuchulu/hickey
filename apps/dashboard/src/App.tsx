@@ -17,7 +17,8 @@ export default function App() {
   const [session, setSession] = useState<'loading' | 'out' | 'in'>('loading')
   const [screen, setScreen] = useState<Screen>('dashboard')
   const [email, setEmail] = useState<string>('')
-  const recovering = location.hash.includes('type=recovery') || location.hash.startsWith('#reset')
+  // Supabase sends the owner here from the "reset password" and "invite" mails: ask for a new password.
+  const recovering = /type=(recovery|invite)/.test(location.hash) || location.hash.startsWith('#reset')
 
   useEffect(() => {
     if (!loadConfig()) {
