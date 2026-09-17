@@ -7,9 +7,10 @@
  * Dine-in flow: Save / KOT keeps the order `running` on a table; Settle later assigns the bill.
  */
 import { schema, type HickeyDb } from '@hickey/db'
-import { businessDate as toBusinessDate, computeBillTotals, nowIso, uuidv7, type AppSettings } from '@hickey/shared'
+import { computeBillTotals, nowIso, uuidv7, type AppSettings } from '@hickey/shared'
 import { and, desc, eq, inArray, like, or, sql } from 'drizzle-orm'
 import { db as getDb } from '../db'
+import * as day from './day'
 import { displayBillNo, nextBillNo, nextKotNo } from './numbering'
 
 const { orders, orderItems, kots, payments, diningTables, auditLog, syncOutbox } = schema
@@ -52,8 +53,9 @@ function totalsFor(input: OrderInput, settings: AppSettings) {
   })
 }
 
+/** "Today" for billing — honours a night-time extension (services/day.ts). */
 export function currentBusinessDate(settings: AppSettings): string {
-  return toBusinessDate(new Date(), settings.billing.dayStartMinutes)
+  return day.currentBusinessDate(settings)
 }
 
 // ---------- reads ----------
@@ -473,7 +475,8 @@ export function liveSummary(bd: string, settings: AppSettings): LiveSummary {
     totalSales: billed.reduce((a, o) => a + o.total, 0),
     running: list.filter((o) => o.status === 'running' || o.status === 'held').length,
     runningAmount: list.filter((o) => o.status === 'running' || o.status === 'held').reduce((a, o) => a + o.total, 0),
-    cancelled: list.filter((o) => o.status === 'cancelled').length,
+    // Discarded holds (never billed) are not cancelled sales.
+    cancelled: list.filter((o) => o.status === 'cancelled' && o.billNo).length,
     byType,
     byPayment,
     byHour,

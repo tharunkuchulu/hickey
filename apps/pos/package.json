@@ -1,6 +1,6 @@
 {
   "name": "@hickey/pos",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "productName": "Hickey POS",
   "description": "Hickey POS — cafe billing desktop app",

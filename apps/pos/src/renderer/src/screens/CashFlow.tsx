@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { CashFlowSummaryDto, CashMovementKind } from '../../../types/admin'
 import { Modal, PrimaryButton, SecondaryButton } from '../components/Modal'
 import { NumPad } from '../components/NumPad'
-import { invoke } from '../lib/api'
+import { invoke, onEvent } from '../lib/api'
 import { useSession } from '../store/session'
 import { toast } from '../store/toast'
 
@@ -16,7 +16,10 @@ export function CashFlowScreen({ initialKind }: { initialKind?: CashMovementKind
   const [adding, setAdding] = useState<CashMovementKind | null>(initialKind ?? null)
 
   const load = useCallback(() => void invoke('cash:summary', {}).then(setS), [])
-  useEffect(load, [load])
+  useEffect(() => {
+    load()
+    return onEvent('event:day', load) // the business day rolled or was extended
+  }, [load])
 
   async function remove(id: string) {
     try {

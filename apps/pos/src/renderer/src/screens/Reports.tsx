@@ -1,8 +1,8 @@
 import { formatMoney } from '@hickey/shared/money'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { REPORTS, type ReportId, type ReportResult } from '../../../types/reports'
 import { DailySalesView } from './DailySales'
-import { invoke } from '../lib/api'
+import { invoke, onEvent } from '../lib/api'
 import { toast } from '../store/toast'
 
 /**
@@ -15,11 +15,19 @@ export function ReportsScreen() {
   const [to, setTo] = useState('')
   const [result, setResult] = useState<ReportResult | null>(null)
   const [busy, setBusy] = useState(false)
+  const touched = useRef(false)
 
   useEffect(() => {
     void invoke('app:businessDate').then((bd) => {
       setFrom(bd)
       setTo(bd)
+    })
+    // When the business day rolls/extends, follow it unless the user picked a range themselves.
+    return onEvent('event:day', (p) => {
+      if (touched.current) return
+      const day = (p as { businessDate: string }).businessDate
+      setFrom(day)
+      setTo(day)
     })
   }, [])
 
@@ -33,6 +41,7 @@ export function ReportsScreen() {
   }, [id, from, to])
 
   const quick = (days: number) => {
+    touched.current = true
     const end = new Date()
     const start = new Date()
     start.setDate(end.getDate() - days + 1)
@@ -80,11 +89,11 @@ export function ReportsScreen() {
           <div className="flex items-end gap-3 flex-wrap">
             <label className="text-xs text-gray-600">
               Order Date from
-              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="block mt-1 min-h-0 h-9 rounded border border-gray-300 px-2 text-sm" />
+              <input type="date" value={from} onChange={(e) => { touched.current = true; setFrom(e.target.value) }} className="block mt-1 min-h-0 h-9 rounded border border-gray-300 px-2 text-sm" />
             </label>
             <label className="text-xs text-gray-600">
               to
-              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="block mt-1 min-h-0 h-9 rounded border border-gray-300 px-2 text-sm" />
+              <input type="date" value={to} onChange={(e) => { touched.current = true; setTo(e.target.value) }} className="block mt-1 min-h-0 h-9 rounded border border-gray-300 px-2 text-sm" />
             </label>
             <div className="flex gap-1">
               {[

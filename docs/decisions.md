@@ -26,3 +26,13 @@
 | 2026-09-17 | Cloud writes go through `sync_push()` (SECURITY DEFINER, per-device token) — no service key on the POS; owner dashboard reads via RLS | Least privilege on a shared anon key; the POS can only upsert its own org. |
 | 2026-09-17 | Placeholder dashboard admin = developer's email until the cafe has its own Google account; Supabase reset-password mail keeps recovery working | Owner unreachable at setup time; handover documented in docs/setup-cloud.md. |
 | 2026-09-17 | Auto-update: electron-updater against GitHub Releases (`tharunkuchulu/hickey`), silent download, install on quit; app auto-starts at login | Zero-touch updates on the counter; free hosting. |
+
+## v0.3.0 (18 Sep 2026)
+
+- **Business-day extension** is one row in the key/value `settings` table (`day_extension`), not a schema change; the pure
+  `resolveBusinessDay()` in shared/time.ts decides the date; every "today" in main goes through `services/day.ts`. Audited as
+  `day.extend`. The dashboard infers an extension from the newest bill (no settings sync).
+- **Discarding unbilled (held/running) orders** needs no admin PIN: no bill number, no payment, nothing lost; audit keeps who did it.
+  Discards are excluded from "cancelled" counts and the Cancel Order report (those are cancelled *bills*).
+- **Alerts** live in main-process memory (`services/alerts.ts`) and are pushed as `event:alerts`; the Hold badge rides on the same payload.
+- Billing row reduced to KOT · Save & Print · Save · Hold after staff confusion on day one.

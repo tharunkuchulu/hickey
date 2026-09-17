@@ -51,12 +51,14 @@ function prune(): void {
 }
 
 /** Ensure a snapshot exists for the previous business day; runs at start and every hour. */
-export function scheduleDailyBackup(dayStartMinutes: () => number): void {
+export function scheduleDailyBackup(dayStartMinutes: () => number, isStillOpen: (bd: string) => boolean = () => false): void {
   const tick = async () => {
     try {
       const yesterday = new Date()
       yesterday.setDate(yesterday.getDate() - 1)
       const bd = businessDate(yesterday, dayStartMinutes())
+      // An extended night: yesterday is still being billed — snapshot it on a later tick.
+      if (isStillOpen(bd)) return
       if (!listBackups().some((b) => b.file === `hickey-${bd}.db`)) await backupNow(bd)
     } catch (err) {
       console.error('[backup] failed', err)

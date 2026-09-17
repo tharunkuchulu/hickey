@@ -96,20 +96,37 @@ Prefer to build locally instead? `pnpm install && pnpm --filter @hickey/pos dist
 4. **Orders** shows the card; **View** → Reprint bill / Reprint KOT; **Food Is Ready** when done.
 5. Open the dashboard on your phone: the sale is there within seconds (or after the internet returns — the counter never stops billing offline).
 
-## How billing buttons work (same as Petpooja)
+## How billing buttons work (v0.3.0 — four buttons)
 
 | Button | What happens | Counts as sale? |
 |---|---|---|
-| **Save** | Bill is made (bill no., payment recorded) but **nothing prints**; card shows SAVED with a *Print bill* button | Yes |
+| **KOT** | Kitchen slip prints; the order stays RUNNING until billed | No (until billed) |
 | **Save & Print** | Bill + KOT slip print | Yes |
-| **KOT / KOT & Print** | Order goes to the kitchen, stays RUNNING until billed | No (until billed) |
+| **Save** | Bill is made (bill no., payment recorded) but **nothing prints**; card shows SAVED with a *Print bill* button | Yes |
 | **Hold** | Parks the order; resume from *Hold* | No (until billed) |
 
-Running/held orders are shown in Live View and Daily Sales as "saved but not billed" so they're never forgotten.
+**Hold / Alerts badges:** the red number on **Hold** is how many orders are parked (any day); on **Alerts** how many things
+need attention — an order on hold for over 20 minutes, sync offline with bills waiting, a print that failed, the day end
+coming up, an update ready to install. Open Alerts and use the button on the row (Resume / Discard / Sync now / Extend…).
+**Discarding a parked order** (customer left): Hold → *Discard* — any biller, no admin PIN, nothing is printed or counted.
+Cancelling a *billed* order still needs a reason and the admin PIN.
 **Wrong payment button?** Orders → *Payment* (or View → *Change payment*), or Daily Sales → tap the payment — works after billing.
 **Part payment:** choose *More → Part* → pick the two modes and type the first amount on the number pad.
 **Favourites:** tap ☆ on any item tile (or in Menu) to pin it to the ★ Favourites rail at the top of the menu; ★ removes it.
 **Menu changes** (items, prices, categories, add-ons) can be done by the biller too: Operations → Menu.
+
+## Late nights — extending the business day
+
+Sales are grouped by **business day**, which ends at **03:30** (Settings → Billing → *Business day starts at*). Everything
+billed before 03:30 belongs to the previous date, like in Petpooja. If the cafe is still open:
+
+- At **03:00** the counter asks *"Business day ends at 03:30 — still open?"* → tap **+1 hour / +2 hours / +3 hours** or a
+  custom time (up to 12 hours). Bills, KOT/bill numbers, Live View, Cash Flow and reports keep the same date until then,
+  and the question comes back 30 minutes before the new end. **No, end at 03:30** keeps the normal end.
+- Forgot, and it is already past 03:30? Alerts → **Reopen…** works for an hour after the day ended, as long as nothing was
+  billed on the new date yet.
+- Any way in: Operations → **Extend business day**, or the Alerts row. The header shows *Day 18/09 ends 04:30 (extended)*.
+- The owner dashboard follows automatically (it reads the date stamped on the bills).
 
 ## Daily / later
 

@@ -9,6 +9,8 @@ import { dataDir } from '../paths'
 import * as adminSvc from '../services/admin'
 import * as menuAdmin from '../services/menu-admin'
 import * as ordersSvc from '../services/orders'
+import * as daySvc from '../services/day'
+import * as alertsSvc from '../services/alerts'
 import { dailySales, reportToCsv, runReport } from '../services/reports'
 import { reportHtml } from '../services/report-print'
 import { backupNow, listBackups } from '../services/backup'
@@ -58,15 +60,21 @@ async function printAfterBill(
   if (opts.kot && kot && s.receipt.printKot) {
     try {
       await printHtml({ html: kotHtml(order, kot, s), copies: s.receipt.kotCopies }, s)
+      alertsSvc.recordPrint({ what: 'kot', ok: true })
     } catch (err) {
-      errors.push(`KOT: ${err instanceof Error ? err.message : String(err)}`)
+      const message = err instanceof Error ? err.message : String(err)
+      errors.push(`KOT: ${message}`)
+      alertsSvc.recordPrint({ what: 'kot', ok: false, message, orderId: order.id, billNo: order.billNo })
     }
   }
   if (opts.bill) {
     try {
       await printHtml({ html: billHtml(order, s, { cashierName: currentUser?.name }), copies: s.receipt.billCopies }, s)
+      alertsSvc.recordPrint({ what: 'bill', ok: true })
     } catch (err) {
-      errors.push(`Bill: ${err instanceof Error ? err.message : String(err)}`)
+      const message = err instanceof Error ? err.message : String(err)
+      errors.push(`Bill: ${message}`)
+      alertsSvc.recordPrint({ what: 'bill', ok: false, message, orderId: order.id, billNo: order.billNo })
     }
   }
   return errors.length ? errors.join(' | ') : undefined
@@ -116,7 +124,8 @@ export function registerIpcHandlers(): void {
 
   handle('settings:set', (next) => {
     const value = appSettingsSchema.parse(next)
-    const prev = loadSettings().sync
+    const prevAll = loadSettings()
+    const prev = prevAll.sync
     db()
       .insert(settings)
       .values({ key: 'app', value, updatedAt: nowIso() })
@@ -127,6 +136,10 @@ export function registerIpcHandlers(): void {
     if (n.enabled && n.deviceToken && (!prev.enabled || prev.deviceToken !== n.deviceToken || prev.supabaseUrl !== n.supabaseUrl)) {
       enqueueAllRows()
       kickSync()
+    }
+    if (prevAll.billing.dayStartMinutes !== value.billing.dayStartMinutes) {
+      daySvc.notifyChanged(value)
+      alertsSvc.refresh()
     }
     return value
   })
@@ -211,10 +224,15 @@ export function registerIpcHandlers(): void {
 
   // ----- orders -----
 
-  handle('orders:save', ({ input, hold }) => ordersSvc.saveOrder(input, ctx(), hold ? 'held' : 'running'))
+  handle('orders:save', ({ input, hold }) => {
+    const o = ordersSvc.saveOrder(input, ctx(), hold ? 'held' : 'running')
+    alertsSvc.refresh()
+    return o
+  })
 
   handle('orders:kot', async ({ input }): Promise<OrderActionResult> => {
     const { order, kot } = ordersSvc.saveWithKot(input, ctx())
+    alertsSvc.refresh()
     const printError = await printAfterBill(order, kot, { bill: false, kot: true })
     return { order, printError }
   })
@@ -222,6 +240,7 @@ export function registerIpcHandlers(): void {
   handle('orders:saveAndPrint', async ({ input, payments, print = true, saveOnly = false }): Promise<OrderActionResult> => {
     const { order, kot } = ordersSvc.saveAndBill(input, payments, ctx(), { print: !saveOnly })
     kickSync()
+    alertsSvc.refresh()
     const printError = print && !saveOnly ? await printAfterBill(order, kot, { bill: true, kot: true }) : undefined
     return { order, printError }
   })
@@ -229,6 +248,7 @@ export function registerIpcHandlers(): void {
   handle('orders:settle', async ({ orderId, payments, print = true, saveOnly = false }): Promise<OrderActionResult> => {
     const order = ordersSvc.settleOrder(orderId, payments, ctx(), { print: !saveOnly })
     kickSync()
+    alertsSvc.refresh()
     const printError = print && !saveOnly ? await printAfterBill(order, ordersSvc.latestKot(orderId), { bill: true, kot: false }) : undefined
     return { order, printError }
   })
@@ -236,15 +256,38 @@ export function registerIpcHandlers(): void {
   handle('orders:updatePayment', ({ orderId, payments }) => {
     const o = ordersSvc.updatePayments(orderId, payments, ctx())
     kickSync()
+    alertsSvc.refresh()
     return o
   })
 
   handle('orders:cancel', ({ orderId, reason }) => {
     const o = ordersSvc.cancelOrder(orderId, reason, ctx())
     kickSync()
+    alertsSvc.refresh()
     return o
   })
-  handle('orders:markReady', ({ orderId }) => ordersSvc.markReady(orderId, ctx()))
+  handle('orders:markReady', ({ orderId }) => {
+    const o = ordersSvc.markReady(orderId, ctx())
+    alertsSvc.refresh()
+    return o
+  })
+
+  // ---- alerts + business day ----
+  handle('alerts:status', () => alertsSvc.compute())
+  handle('day:status', () => daySvc.dayStatus(loadSettings()))
+  handle('day:extend', (req) => {
+    if (!currentUser) throw new Error('Log in first')
+    const c = ctx()
+    const r = daySvc.extendDay(req, { userId: c.userId, deviceId: c.deviceId }, c.settings)
+    kickSync()
+    alertsSvc.refresh()
+    return r
+  })
+  handle('day:snooze', ({ endsAt }) => {
+    const r = daySvc.snoozeDayEnd(endsAt, loadSettings())
+    alertsSvc.refresh()
+    return r
+  })
 
   handle('orders:reprint', async ({ orderId, what }) => {
     const s = loadSettings()
@@ -264,9 +307,12 @@ export function registerIpcHandlers(): void {
         await printHtml({ html: kotHtml(order, kot, s, { duplicate: true }) }, s)
       }
       ordersSvc.recordReprint(orderId, what, ctx())
+      alertsSvc.recordPrint({ what, ok: true })
       return { ok: true }
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      const message = err instanceof Error ? err.message : String(err)
+      alertsSvc.recordPrint({ what, ok: false, message, orderId, billNo: order.billNo })
+      return { ok: false, error: message }
     }
   })
 
@@ -397,6 +443,7 @@ export function registerIpcHandlers(): void {
   handle('printers:test', async ({ printerName }) => {
     try {
       await testPrint({ ...loadSettings(), printer: { ...loadSettings().printer, windowsPrinterName: printerName } })
+      alertsSvc.recordPrint({ what: 'test', ok: true })
       return { ok: true }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }

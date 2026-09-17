@@ -64,6 +64,39 @@ export interface BackupInfoDto {
   createdAt: string
 }
 
+/** Which business day is in force at the counter, incl. a night-time extension (services/day.ts). */
+export interface DayStatusDto {
+  businessDate: string
+  normalEndsAt: string
+  endsAt: string
+  extended: boolean
+  maxEndsAt: string
+  reopenable: { businessDate: string; normalEndsAt: string; maxEndsAt: string } | null
+  snoozedUntil: string | null
+}
+
+export type AlertKind = 'hold_stale' | 'sync_problem' | 'print_failed' | 'day_end' | 'update_ready'
+export interface AlertDto {
+  id: string
+  kind: AlertKind
+  severity: 'info' | 'warning' | 'error'
+  title: string
+  detail: string
+  at: string
+  order?: { id: string; kotNo: number | null; tableName: string | null; total: number; items: number; status: 'held' | 'running'; ageMinutes: number; businessDate: string }
+  sync?: { state: SyncStatusDto['state']; pending: number; error: string | null }
+  print?: { what: 'bill' | 'kot'; message: string; orderId: string | null; billNo: string | null }
+  day?: { businessDate: string; endsAt: string; extended: boolean; phase: 'ending' | 'ended'; snoozed: boolean }
+  update?: { version: string }
+}
+/** Pushed as `event:alerts`; also the Hold badge count. */
+export interface AlertsStatusDto {
+  holdCount: number
+  alerts: AlertDto[]
+  day: DayStatusDto
+  at: string
+}
+
 export interface AppInfo {
   version: string
   dataDir: string
@@ -120,6 +153,11 @@ export interface IpcContract {
   'menu:deleteItem': { req: { id: string }; res: void }
   'menu:saveAddon': { req: AddonInput; res: string }
   'menu:deleteAddon': { req: { id: string }; res: void }
+  'alerts:status': { req: void; res: AlertsStatusDto }
+  'day:status': { req: void; res: DayStatusDto }
+  /** endsAt null = back to the normal end; businessDate only when reopening the previous day. */
+  'day:extend': { req: { endsAt: string | null; businessDate?: string }; res: DayStatusDto }
+  'day:snooze': { req: { endsAt: string }; res: DayStatusDto }
   'update:check': { req: void; res: { ok: boolean; message: string } }
   'update:install': { req: void; res: void }
 }

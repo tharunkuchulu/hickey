@@ -65,3 +65,11 @@ export type AppSettings = z.infer<typeof appSettingsSchema>
 
 export const defaultAppSettings = (): AppSettings =>
   appSettingsSchema.parse({ cafe: {}, receipt: {}, printer: {}, billing: {}, sync: {} })
+
+/** Row `day_extension` in the settings table: "business day X stays open until Y" (see resolveBusinessDay). */
+export const dayExtensionSchema = z.object({
+  businessDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  endsAt: z.string(),
+  setBy: z.string().nullable().default(null),
+  setAt: z.string().default('')
+})

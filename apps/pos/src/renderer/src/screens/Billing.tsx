@@ -155,10 +155,11 @@ export function BillingScreen() {
       toast.success('Order put on hold')
       cart.clear()
     })
-  const doKot = (print: boolean) =>
+  // Sends the order to the kitchen and prints the KOT slip (per Settings → Print); the order stays running until billed.
+  const doKot = () =>
     run('KOT', async () => {
       const r = await invoke('orders:kot', { input: cart.toInput() })
-      if (print && r.printError) toast.error(r.printError)
+      if (r.printError) toast.error(r.printError)
       toast.success(`KOT ${r.order.kotNo} sent`)
       if (r.order.orderType === 'dine_in') cart.loadOrder(r.order)
       else cart.clear()
@@ -316,7 +317,7 @@ export function BillingScreen() {
             <div className="px-2 text-[11px] text-gray-600 min-w-[88px] text-right">
               {cart.orderId ? (
                 <button onClick={cart.clear} className="min-h-0 h-7 px-2 rounded bg-cardblue text-navy-800 text-[11px] font-medium">
-                  Editing · Discard
+                  Editing · Cancel edit
                 </button>
               ) : (
                 <>
@@ -475,24 +476,18 @@ export function BillingScreen() {
             )}
           </div>
 
-          {/* Petpooja button row: Save · Save & Print · Save & eBill · KOT · KOT & Print · Hold */}
-          <div className="shrink-0 p-1.5 grid grid-cols-6 gap-1 border-t border-gray-300 bg-[#fafafa]">
-            <button onClick={doSave} disabled={busy} className="h-11 rounded-sm bg-red text-white text-[11px] font-semibold disabled:opacity-60">
-              Save
-            </button>
-            <button onClick={doSaveAndPrint} disabled={busy} className="h-11 rounded-sm bg-red text-white text-[11px] font-semibold leading-tight disabled:opacity-60">
-              Save &amp; Print
-            </button>
-            <button disabled title="e-Bill via WhatsApp is not part of v1" className="h-11 rounded-sm bg-red/50 text-white text-[11px] font-semibold leading-tight">
-              Save &amp; eBill
-            </button>
-            <button onClick={() => doKot(false)} disabled={busy} className="h-11 rounded-sm bg-dark text-white text-[11px] font-semibold disabled:opacity-60">
+          {/* The four buttons the staff asked for: KOT (kitchen slip only) · Save & Print (bill + KOT) · Save (bill, no paper) · Hold */}
+          <div className="shrink-0 p-1.5 grid grid-cols-4 gap-1 border-t border-gray-300 bg-[#fafafa]" data-testid="bill-actions">
+            <button onClick={doKot} disabled={busy} className="h-12 rounded-sm bg-dark text-white text-[12px] font-semibold disabled:opacity-60">
               KOT
             </button>
-            <button onClick={() => doKot(true)} disabled={busy} className="h-11 rounded-sm bg-dark text-white text-[11px] font-semibold leading-tight disabled:opacity-60">
-              KOT &amp; Print
+            <button onClick={doSaveAndPrint} disabled={busy} className="h-12 rounded-sm bg-red text-white text-[12px] font-semibold leading-tight disabled:opacity-60">
+              Save &amp; Print
             </button>
-            <button onClick={doHold} disabled={busy} className="h-11 rounded-sm bg-white border border-gray-400 text-gray-800 text-[11px] font-semibold disabled:opacity-60">
+            <button onClick={doSave} disabled={busy} className="h-12 rounded-sm bg-red text-white text-[12px] font-semibold disabled:opacity-60">
+              Save
+            </button>
+            <button onClick={doHold} disabled={busy} className="h-12 rounded-sm bg-white border border-gray-400 text-gray-800 text-[12px] font-semibold disabled:opacity-60">
               Hold
             </button>
           </div>

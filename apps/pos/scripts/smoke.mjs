@@ -89,8 +89,13 @@ const assert = (cond, msg) => {
 await send('Page.enable')
 await shot('01-login')
 
-// --- login as Admin (skip if a previous run left us logged in)
+// --- login as Admin (skip if a previous run left us logged in; log out first if someone else is)
+if (await evaluate(`!!document.querySelector('header') && !document.querySelector('header').textContent.includes('Biller: Admin')`)) {
+  await clickQuick('Logout')
+  await waitFor(`!document.querySelector('header')`, 'logged out stale session')
+}
 if (!(await evaluate(`!!document.querySelector('header')`))) {
+  await waitFor(`[...document.querySelectorAll('button')].some(b => b.textContent.startsWith('Admin'))`, 'admin tile')
   await clickText('Admin')
   for (const d of '1234') await clickText(d, true)
   await clickText('Login')
@@ -159,6 +164,52 @@ assert(rejected, 'underpayment should be rejected')
 const held = await ipc('orders:save', { input: mk([{ itemId: null, name: 'Peach Chiller', variantName: null, unitPrice: 9900, qty: 1, addons: [], notes: null }], []).input, hold: true })
 assert(held.status === 'held' && held.billNo === null, 'hold failed')
 
+// v0.3.0: the billing row is exactly KOT · Save & Print · Save · Hold
+const row = await evaluate(`[...document.querySelectorAll('[data-testid="bill-actions"] button')].map(b => b.textContent.trim())`)
+assert(JSON.stringify(row) === JSON.stringify(['KOT', 'Save & Print', 'Save', 'Hold']), `button row wrong: ${JSON.stringify(row)}`)
+
+// v0.3.0: alerts status + hold badge reflect every parked order (any date)
+await evaluate(`window.__ev = []; window.hickey.on('event:alerts', (p) => window.__ev.push(p)); true`)
+const held2 = await ipc('orders:save', { input: mk([{ itemId: null, name: 'Badge Tea', variantName: null, unitPrice: 2000, qty: 1, addons: [], notes: null }], []).input, hold: true })
+await waitFor(`window.__ev.length > 0`, 'event:alerts after hold')
+const alertsSt = await ipc('alerts:status')
+const openNow = await ipc('orders:list', { status: ['held', 'running'], limit: 5000 })
+assert(alertsSt.holdCount === openNow.length && alertsSt.holdCount >= 2, `holdCount ${alertsSt.holdCount} vs list ${openNow.length}`)
+assert(Array.isArray(alertsSt.alerts) && alertsSt.alerts.every((a) => ['hold_stale', 'sync_problem', 'print_failed', 'day_end', 'update_ready'].includes(a.kind) && a.id && a.title && a.at), 'alerts shape wrong')
+assert(alertsSt.day.businessDate === bd && typeof alertsSt.day.endsAt === 'string' && alertsSt.day.extended === false, `day status wrong: ${JSON.stringify(alertsSt.day)}`)
+const lastEv = await evaluate(`window.__ev[window.__ev.length - 1].holdCount`)
+assert(lastEv === alertsSt.holdCount, 'event payload holdCount differs')
+await waitFor(`document.querySelector('[data-testid="badge-hold"]')?.textContent === '${alertsSt.holdCount}'`, 'hold badge count')
+console.log('alerts ok: holdCount', alertsSt.holdCount, '| alerts', alertsSt.alerts.map((a) => a.kind).join(',') || 'none')
+
+// v0.3.0: business-day extension round-trip (all through main; today's date must stay in force)
+await ipc('day:extend', { endsAt: null }).catch(() => undefined)
+const d0 = await ipc('day:status')
+assert(d0.businessDate === bd && d0.extended === false && d0.endsAt === d0.normalEndsAt, `day:status wrong: ${JSON.stringify(d0)}`)
+const plus1h = new Date(new Date(d0.endsAt).getTime() + 3600_000).toISOString()
+const d1 = await ipc('day:extend', { endsAt: plus1h })
+assert(d1.extended === true && d1.endsAt === plus1h && d1.businessDate === bd, `extend wrong: ${JSON.stringify(d1)}`)
+assert((await ipc('app:businessDate')) === bd, 'business date changed after extension')
+const afterExt = await ipc('orders:save', { input: mk([{ itemId: null, name: 'Late Tea', variantName: null, unitPrice: 1000, qty: 1, addons: [], notes: null }], []).input, hold: true })
+assert(afterExt.businessDate === bd, 'order stamped with the wrong date during extension')
+assert((await ipc('alerts:status')).day.extended === true, 'alerts day status not extended')
+for (const [label, req] of [
+  ['not after normal end', { endsAt: d0.endsAt }],
+  ['in the past', { endsAt: new Date(Date.now() - 60_000).toISOString() }],
+  ['over 12 h', { endsAt: new Date(new Date(d0.endsAt).getTime() + 13 * 3600_000).toISOString() }],
+  ['closed date', { endsAt: plus1h, businessDate: '2020-01-01' }]
+]) {
+  let rejectedExt = false
+  try { await ipc('day:extend', req) } catch { rejectedExt = true }
+  assert(rejectedExt, `day:extend should reject: ${label}`)
+}
+const snoozed = await ipc('day:snooze', { endsAt: d1.endsAt })
+assert(snoozed.snoozedUntil === d1.endsAt, 'snooze not recorded')
+const d2 = await ipc('day:extend', { endsAt: null })
+assert(d2.extended === false && d2.endsAt === d0.endsAt, 'revert failed')
+await ipc('orders:cancel', { orderId: afterExt.id, reason: 'Discarded' })
+console.log('day extension ok:', d0.endsAt, '→', plus1h, '→ reverted')
+
 // "Save" = bill without printing (Petpooja semantics): counted as a sale, status SAVED (settled), no print
 const r3 = await ipc('orders:saveAndPrint', { ...mk(
   [{ itemId: null, name: 'Zebra Mocha', variantName: 'sip', unitPrice: 16900, qty: 1, addons: [], notes: null }],
@@ -224,6 +275,11 @@ const cancelled = await ipc('orders:cancel', { orderId: r2.order.id, reason: 'sm
 assert(cancelled.status === 'cancelled', 'cancel failed')
 const live2 = await ipc('live:summary', { businessDate: bd })
 assert(live2.totalOrders === base.totalOrders + 3 && live2.cancelled === base.cancelled + 1, 'cancel not reflected in live summary')
+// discarding an unbilled hold must not count as a cancelled bill
+const held3 = await ipc('orders:save', { input: mk([{ itemId: null, name: 'Discard Me', variantName: null, unitPrice: 5000, qty: 1, addons: [], notes: null }], []).input, hold: true })
+await ipc('orders:cancel', { orderId: held3.id, reason: 'Discarded: smoke' })
+const live3 = await ipc('live:summary', { businessDate: bd })
+assert(live3.cancelled === live2.cancelled, 'discarded hold counted as a cancelled bill')
 
 // --- Orders screen renders the cards
 await clickQuick('Orders')
@@ -241,9 +297,51 @@ assert(await evaluate(`document.body.innerText.includes('Ready')`), 'ready state
 // --- Hold screen shows the held order with Resume
 await clickQuick('Hold')
 await waitFor(`document.body.innerText.includes('Held / running')`, 'hold screen')
+await waitFor(`[...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Resume')`, 'hold cards loaded')
 await clickText('Resume')
 await waitFor(`document.body.innerText.includes('Editing')`, 'resume into billing')
 await shot('06-resumed-hold')
+await evaluate(`[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Editing · Cancel edit').click(); true`)
+
+// v0.3.0: a cashier (not admin) discards a held order without any PIN, and can open the Menu screen
+const cashier = await ipc('users:save', { name: 'Smoke Cashier', role: 'cashier', pin: '3333' })
+await clickQuick('Logout')
+await waitFor(`!document.querySelector('header')`, 'logged out')
+await waitFor(`[...document.querySelectorAll('button')].some(b => b.textContent.startsWith('Smoke Cashier'))`, 'cashier tile')
+await clickText('Smoke Cashier')
+for (const d of '3333') await clickText(d, true)
+await clickText('Login')
+await waitFor(`document.querySelector('header')?.textContent.includes('Smoke Cashier')`, 'cashier login')
+const holdBefore = (await ipc('alerts:status')).holdCount
+await clickQuick('Hold')
+await waitFor(`!!document.querySelector('[data-testid="discard"]')`, 'discard button on hold card')
+const discardId = held2.id
+await evaluate(`(() => { const card = [...document.querySelectorAll('main .bg-cardblue')].map(h => h.parentElement).find(c => c.textContent.includes('Badge Tea')); card.querySelector('[data-testid="discard"]').click(); return true })()`)
+await waitFor(`!!document.querySelector('[data-testid="discard-confirm"]')`, 'discard dialog')
+assert(!(await evaluate(`!!document.querySelector('input[placeholder="Admin PIN"]')`)), 'discard dialog must not ask for the admin PIN')
+await evaluate(`document.querySelector('[data-testid="discard-confirm"]').click(); true`)
+await waitFor(`!document.querySelector('[data-testid="discard-confirm"]')`, 'discard done')
+const discarded = await ipc('orders:get', { orderId: discardId })
+assert(discarded.status === 'cancelled' && discarded.cancelReason.startsWith('Discarded'), `discard wrong: ${discarded.status} ${discarded.cancelReason}`)
+await waitFor(`document.querySelector('[data-testid="badge-hold"]')?.textContent === '${holdBefore - 1}'`, 'hold badge after discard')
+await evaluate(`[...document.querySelectorAll('header button')].find(b => b.getAttribute('aria-label') === 'Menu').click(); true`)
+await clickText('Operations', true)
+await waitFor(`document.body.innerText.includes('Operations')`, 'operations screen')
+await clickText('Menu', true)
+await waitFor(`document.body.innerText.includes('Add Items')`, 'menu screen for cashier')
+assert(!(await evaluate(`document.body.innerText.includes('Only an admin can edit the menu')`)), 'menu still gated for cashier')
+await clickQuick('Alerts')
+await waitFor(`document.body.innerText.includes('Alerts |')`, 'alerts screen')
+await shot('06b-alerts')
+await clickQuick('Logout')
+await waitFor(`!document.querySelector('header')`, 'logged out 2')
+await waitFor(`[...document.querySelectorAll('button')].some(b => b.textContent.startsWith('Admin'))`, 'admin tile')
+await clickText('Admin')
+for (const d of '1234') await clickText(d, true)
+await clickText('Login')
+await waitFor(`document.querySelector('header')?.textContent.includes('Admin')`, 'admin login again')
+await ipc('users:save', { id: cashier.id, name: 'Smoke Cashier', role: 'cashier', isActive: false })
+console.log('cashier discard + menu + alerts screen ok')
 
 // --- Live view + settings
 await clickQuick('Live View')

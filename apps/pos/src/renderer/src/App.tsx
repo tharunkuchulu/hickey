@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { AppInfo, SyncStatusDto } from '../../main/ipc/contract'
 import { Icon } from './components/icons'
+import { CountBadge } from './components/CountBadge'
+import { ExtendDayModal } from './components/ExtendDayModal'
 import { Toasts } from './components/Modal'
+import { AlertsScreen } from './screens/Alerts'
 import { invoke, onEvent } from './lib/api'
 import { BillingScreen } from './screens/Billing'
 import { CashFlowScreen } from './screens/CashFlow'
@@ -14,20 +17,21 @@ import { LoginScreen } from './screens/Login'
 import { OperationsScreen } from './screens/Operations'
 import { OrdersScreen } from './screens/Orders'
 import { SettingsScreen } from './screens/Settings'
+import { useAlerts } from './store/alerts'
 import { useCart } from './store/cart'
 import { useMenu } from './store/menu'
 import { useSession, type Screen } from './store/session'
 import { toast } from './store/toast'
 
 /** Top-bar quick actions, in Petpooja's order (Item On/Off · Store · Live View · Orders · Recent · Hold · Alerts · Logout). */
-const QUICK: Array<{ id: string; label: string; icon: (p: { size?: number }) => React.ReactNode; screen?: Screen; soon?: boolean }> = [
+const QUICK: Array<{ id: string; label: string; icon: (p: { size?: number }) => React.ReactNode; screen?: Screen; soon?: boolean; badge?: 'hold' | 'alerts' }> = [
   { id: 'itemonoff', label: 'Item On/Off', icon: Icon.Power, screen: 'itemonoff' },
   { id: 'store', label: 'Store', icon: Icon.Store, soon: true },
   { id: 'live', label: 'Live View', icon: Icon.Live, screen: 'live' },
   { id: 'orders', label: 'Orders', icon: Icon.Orders, screen: 'orders' },
   { id: 'recent', label: 'Recent', icon: Icon.Recent, screen: 'orders' },
-  { id: 'hold', label: 'Hold', icon: Icon.Hold, screen: 'hold' },
-  { id: 'alerts', label: 'Alerts', icon: Icon.Bell, soon: true }
+  { id: 'hold', label: 'Hold', icon: Icon.Hold, screen: 'hold', badge: 'hold' },
+  { id: 'alerts', label: 'Alerts', icon: Icon.Bell, screen: 'alerts', badge: 'alerts' }
 ]
 
 const SIDE: Array<{ id: Screen | 'updates' | 'logout'; label: string }> = [
@@ -47,12 +51,17 @@ export default function App() {
   const [billQ, setBillQ] = useState('')
   const [kotQ, setKotQ] = useState('')
   const [sync, setSync] = useState<SyncStatusDto | null>(null)
+  const alerts = useAlerts((s) => s.status)
+  const prompt = useAlerts((s) => s.prompt)
+  const bindAlerts = useAlerts((s) => s.bind)
+  const closePrompt = useAlerts((s) => s.closePrompt)
 
   useEffect(() => {
     void invoke('app:info').then(setInfo)
     void invoke('sync:status').then(setSync)
     return onEvent('event:sync', (p) => setSync(p as SyncStatusDto))
   }, [])
+  useEffect(() => bindAlerts(), [bindAlerts])
   useEffect(() => {
     if (user) void loadMenu()
   }, [user, loadMenu])
@@ -116,12 +125,13 @@ export default function App() {
           <button
             key={q.id}
             onClick={() => (q.screen ? go(q.screen) : toast.info(`${q.label} arrives in the next phase`))}
-            className={`min-h-0 h-11 w-[62px] rounded flex flex-col items-center justify-center text-dark hover:bg-gray-100 ${
+            className={`relative min-h-0 h-11 w-[62px] rounded flex flex-col items-center justify-center text-dark hover:bg-gray-100 ${
               q.screen && screen === q.screen ? 'bg-gray-100' : ''
             } ${q.soon ? 'opacity-60' : ''}`}
           >
             <q.icon size={20} />
             <span className="text-[9px] mt-0.5 leading-none">{q.label}</span>
+            {q.badge && <CountBadge n={q.badge === 'hold' ? (alerts?.holdCount ?? 0) : (alerts?.alerts.length ?? 0)} testId={`badge-${q.badge}`} />}
           </button>
         ))}
         <button onClick={() => void logout()} className="min-h-0 h-11 w-[62px] rounded flex flex-col items-center justify-center text-dark hover:bg-gray-100">
@@ -138,7 +148,16 @@ export default function App() {
             {sync?.state === 'disabled' ? 'Local only' : sync?.state === 'synced' ? 'Synced' : sync?.state === 'syncing' ? 'Syncing…' : sync?.state === 'offline' ? 'Offline' : 'Sync error'}
             {sync && sync.pending > 0 ? ` · ${sync.pending} pending` : ''}
           </span>
-          <span className="font-semibold">Biller: {user.name}</span>
+          <span className="font-semibold">
+            Biller: {user.name}
+            {alerts?.day && (
+              <span className={`font-normal ${alerts.day.extended ? 'text-amber-700' : 'text-brand-700/80'}`}>
+                {' '}· Day {alerts.day.businessDate.slice(8)}/{alerts.day.businessDate.slice(5, 7)} ends{' '}
+                {new Date(alerts.day.endsAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                {alerts.day.extended ? ' (extended)' : ''}
+              </span>
+            )}
+          </span>
         </div>
       </header>
 
@@ -154,7 +173,10 @@ export default function App() {
         {screen === 'cash' && <CashFlowScreen key={cashKind ?? 'none'} initialKind={cashKind ?? undefined} />}
         {screen === 'itemonoff' && <ItemOnOffScreen />}
         {screen === 'menu' && <MenuScreen />}
+        {screen === 'alerts' && <AlertsScreen />}
       </main>
+
+      {prompt.open && alerts?.day && <ExtendDayModal day={alerts.day} mode={prompt.mode} onClose={closePrompt} />}
 
       {menuOpen && (
         <div className="fixed inset-0 z-30 flex" onMouseDown={() => setMenuOpen(false)}>

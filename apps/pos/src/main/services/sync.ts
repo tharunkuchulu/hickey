@@ -68,8 +68,16 @@ async function rpc<T>(s: AppSettings['sync'], fn: string, body: Record<string, u
   }
 }
 
+const statusListeners = new Set<(s: SyncStatus) => void>()
+/** Main-process subscribers (alerts) — the renderer gets the same status as `event:sync`. */
+export function onSyncStatus(fn: (s: SyncStatus) => void): () => void {
+  statusListeners.add(fn)
+  return () => statusListeners.delete(fn)
+}
+
 function broadcast() {
   for (const w of BrowserWindow.getAllWindows()) w.webContents.send('event:sync', status)
+  for (const l of statusListeners) l(status)
 }
 
 function pendingCount(): number {

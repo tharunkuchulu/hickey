@@ -1,7 +1,7 @@
 import { FOUR_HOUR_BUCKETS, itemPerformance, salesByDay, salesByFourHours, salesStats } from '@hickey/shared/analytics'
 import { formatMoney } from '@hickey/shared/money'
-import { useEffect, useMemo, useState } from 'react'
-import { addDays, fetchCashMovements, fetchDevices, fetchRange, todayBusinessDate, type CashMovementRow, type RangeData } from '../lib/data'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { addDays, fetchCashMovements, fetchDevices, fetchRange, resolveTodayBusinessDate, todayBusinessDate, type CashMovementRow, type RangeData } from '../lib/data'
 
 const TYPE_LABEL: Record<string, string> = { dine_in: 'Dine In', pick_up: 'Pick Up', delivery: 'Delivery' }
 const TYPE_COLOR: Record<string, string> = { dine_in: '#1e6fd9', pick_up: '#16a34a', delivery: '#f0873a' }
@@ -10,6 +10,12 @@ const PAY_LABEL: Record<string, string> = { cash: 'Cash', card: 'Card', upi: 'UP
 /** The Petpooja owner dashboard: Sales Statistics, order-type cards, 15-day trend, item performance, expenses. */
 export function DashboardScreen() {
   const [date, setDate] = useState(todayBusinessDate())
+  const touched = useRef(false)
+  useEffect(() => {
+    void resolveTodayBusinessDate().then((d) => {
+      if (!touched.current) setDate(d)
+    })
+  }, [])
   const [day, setDay] = useState<RangeData | null>(null)
   const [trend, setTrend] = useState<RangeData | null>(null)
   const [cash, setCash] = useState<CashMovementRow[]>([])
@@ -51,7 +57,7 @@ export function DashboardScreen() {
           ● POS synced {lastSeen ? relative(lastSeen) : 'never'}
         </span>
         <div className="flex-1" />
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-9 rounded-md border border-gray-300 px-2 text-sm bg-white" />
+        <input type="date" value={date} onChange={(e) => { touched.current = true; setDate(e.target.value) }} className="h-9 rounded-md border border-gray-300 px-2 text-sm bg-white" />
       </div>
 
       {/* Sales Statistics */}

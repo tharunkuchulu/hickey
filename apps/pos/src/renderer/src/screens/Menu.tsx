@@ -5,15 +5,13 @@ import type { ItemInput, VariantInput } from '../../../types/menu-admin'
 import { Modal, PrimaryButton, SecondaryButton } from '../components/Modal'
 import { invoke } from '../lib/api'
 import { useMenu } from '../store/menu'
-import { useSession } from '../store/session'
 import { toast } from '../store/toast'
 import { FoodMark } from './Billing'
 
 type Tab = 'items' | 'categories' | 'addons'
 
-/** Petpooja "Menu Management": Items (category rail + table) · Categories · Addons. Admin only. */
+/** Petpooja "Menu Management": Items (category rail + table) · Categories · Addons. Open to billers too (v0.3.0). */
 export function MenuScreen() {
-  const me = useSession((s) => s.user)
   const menu = useMenu()
   const [tab, setTab] = useState<Tab>('items')
   const [categoryId, setCategoryId] = useState<string | null>(null)
@@ -24,7 +22,6 @@ export function MenuScreen() {
   const currentCategory = categoryId ?? menu.categories[0]?.id ?? null
   const rows = useMemo(() => menu.items.filter((i) => i.categoryId === currentCategory).sort((a, b) => a.sortOrder - b.sortOrder), [menu.items, currentCategory])
 
-  if (me?.role !== 'admin') return <div className="h-full flex items-center justify-center text-gray-500">Only an admin can edit the menu.</div>
 
   const reload = () => void menu.load()
   const act = async (label: string, fn: () => Promise<unknown>) => {

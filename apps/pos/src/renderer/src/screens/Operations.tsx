@@ -1,4 +1,5 @@
 import { invoke } from '../lib/api'
+import { useAlerts } from '../store/alerts'
 import { useSession, type Screen } from '../store/session'
 import { toast } from '../store/toast'
 
@@ -55,7 +56,8 @@ const GROUPS: Array<{ title: string; tiles: Tile[] }> = [
           void invoke('sync:now').then((st) => (st.state === 'synced' ? toast.success('Everything is synced') : toast.error(st.error ?? `Sync ${st.state}`)))
         }
       },
-      { label: 'Alerts', soon: true },
+      { label: 'Alerts', screen: 'alerts' },
+      { label: 'Extend business day', action: () => useAlerts.getState().openPrompt('manual') },
       { label: 'Settings', screen: 'settings' },
       { label: 'Help', soon: true }
     ]

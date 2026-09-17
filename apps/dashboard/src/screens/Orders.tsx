@@ -1,6 +1,6 @@
 import { formatMoney } from '@hickey/shared/money'
-import { useEffect, useMemo, useState } from 'react'
-import { addDays, fetchRange, todayBusinessDate, type RangeData } from '../lib/data'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { addDays, fetchRange, resolveTodayBusinessDate, todayBusinessDate, type RangeData } from '../lib/data'
 
 const TYPE_LABEL: Record<string, string> = { dine_in: 'Dine In', pick_up: 'Pick Up', delivery: 'Delivery' }
 
@@ -9,6 +9,15 @@ export function OrdersScreen() {
   const [from, setFrom] = useState(todayBusinessDate())
   const [to, setTo] = useState(todayBusinessDate())
   const [q, setQ] = useState('')
+  const touched = useRef(false)
+  useEffect(() => {
+    void resolveTodayBusinessDate().then((d) => {
+      if (!touched.current) {
+        setFrom(d)
+        setTo(d)
+      }
+    })
+  }, [])
   const [data, setData] = useState<RangeData | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
@@ -70,11 +79,11 @@ export function OrdersScreen() {
       <div className="bg-white rounded-xl border border-gray-200 p-3 flex flex-wrap items-end gap-3">
         <label className="text-xs text-gray-600">
           Start Date
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="block h-9 rounded-md border border-gray-300 px-2 text-sm" />
+          <input type="date" value={from} onChange={(e) => { touched.current = true; setFrom(e.target.value) }} className="block h-9 rounded-md border border-gray-300 px-2 text-sm" />
         </label>
         <label className="text-xs text-gray-600">
           End Date
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="block h-9 rounded-md border border-gray-300 px-2 text-sm" />
+          <input type="date" value={to} onChange={(e) => { touched.current = true; setTo(e.target.value) }} className="block h-9 rounded-md border border-gray-300 px-2 text-sm" />
         </label>
         <div className="flex gap-1">
           {[

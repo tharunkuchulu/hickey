@@ -4,10 +4,33 @@ import { supabase } from './supabase'
 /** Business day boundary used by the POS (03:30). Mirrors settings.billing.dayStartMinutes. */
 export const DAY_START_MINUTES = 210
 
-export function todayBusinessDate(): string {
+function computedToday(): string {
   const d = new Date()
   d.setMinutes(d.getMinutes() - DAY_START_MINUTES)
   return ymd(d)
+}
+
+let resolved: { date: string; at: number } | null = null
+
+/** Today's business date; once resolveTodayBusinessDate() has run it reflects a night-time extension at the counter. */
+export function todayBusinessDate(): string {
+  return resolved && Date.now() - resolved.at < 5 * 60_000 ? resolved.date : computedToday()
+}
+
+/**
+ * The counter can extend its business day past 03:30 (v0.3.0) and no settings sync to the cloud, so infer it:
+ * if the newest bill was made in the last 3 hours and still carries the earlier date, that day is still open.
+ */
+export async function resolveTodayBusinessDate(): Promise<string> {
+  const computed = computedToday()
+  let date = computed
+  try {
+    const { data } = await supabase().from('orders').select('business_date,created_at').order('created_at', { ascending: false }).limit(1)
+    const o = data?.[0] as { business_date: string; created_at: string } | undefined
+    if (o && o.business_date < computed && Date.now() - new Date(o.created_at).getTime() < 3 * 3600_000) date = o.business_date
+  } catch {}
+  resolved = { date, at: Date.now() }
+  return date
 }
 export function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`

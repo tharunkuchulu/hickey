@@ -1,7 +1,7 @@
 import { hourlySales, itemPerformance, salesByDay, salesStats, sumBy } from '@hickey/shared/analytics'
 import { formatMoney } from '@hickey/shared/money'
-import { useEffect, useMemo, useState } from 'react'
-import { addDays, fetchRange, todayBusinessDate, type RangeData } from '../lib/data'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { addDays, fetchRange, resolveTodayBusinessDate, todayBusinessDate, type RangeData } from '../lib/data'
 import { DailySales } from './DailySales'
 
 type ReportId = 'daily' | 'day_wise' | 'item_wise' | 'payment_wise' | 'hourly' | 'cancelled'
@@ -25,6 +25,15 @@ export function ReportsScreen() {
   const [id, setId] = useState<ReportId>('daily')
   const [from, setFrom] = useState(todayBusinessDate())
   const [to, setTo] = useState(todayBusinessDate())
+  const touched = useRef(false)
+  useEffect(() => {
+    void resolveTodayBusinessDate().then((d) => {
+      if (!touched.current) {
+        setFrom(d)
+        setTo(d)
+      }
+    })
+  }, [])
   const [data, setData] = useState<RangeData | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
@@ -115,11 +124,11 @@ export function ReportsScreen() {
         <div className="bg-white rounded-xl border border-gray-200 p-3 flex flex-wrap items-end gap-3">
           <label className="text-xs text-gray-600">
             From
-            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="block h-9 rounded-md border border-gray-300 px-2 text-sm" />
+            <input type="date" value={from} onChange={(e) => { touched.current = true; setFrom(e.target.value) }} className="block h-9 rounded-md border border-gray-300 px-2 text-sm" />
           </label>
           <label className="text-xs text-gray-600">
             To
-            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="block h-9 rounded-md border border-gray-300 px-2 text-sm" />
+            <input type="date" value={to} onChange={(e) => { touched.current = true; setTo(e.target.value) }} className="block h-9 rounded-md border border-gray-300 px-2 text-sm" />
           </label>
           {[
             ['Today', 0],

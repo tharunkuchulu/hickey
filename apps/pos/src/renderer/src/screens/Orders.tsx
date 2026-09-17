@@ -3,8 +3,9 @@ import { ORDER_TYPE_LABELS } from '@hickey/shared/schemas/order'
 import { useCallback, useEffect, useState } from 'react'
 import type { OrderDto, PaymentInput } from '../../../types/orders'
 import { Modal, PrimaryButton, SecondaryButton } from '../components/Modal'
+import { DiscardDialog } from '../components/DiscardDialog'
 import { PaymentDialog } from '../components/PaymentDialog'
-import { invoke } from '../lib/api'
+import { invoke, onEvent } from '../lib/api'
 import { useCart } from '../store/cart'
 import { useSession } from '../store/session'
 import { toast } from '../store/toast'
@@ -23,12 +24,14 @@ export function OrdersScreen({ mode = 'today' }: { mode?: 'today' | 'hold' }) {
   const [detail, setDetail] = useState<OrderDto | null>(null)
   const [cancelling, setCancelling] = useState<OrderDto | null>(null)
   const [paying, setPaying] = useState<OrderDto | null>(null)
+  const [discarding, setDiscarding] = useState<OrderDto | null>(null)
   const [now, setNow] = useState(Date.now())
 
   const load = useCallback(async () => {
     const bd = await invoke('app:businessDate')
     const list = await invoke('orders:list', {
-      businessDate: query.trim() ? undefined : bd,
+      // Hold shows every parked order, whatever day it was started on — a forgotten hold must not vanish at 03:30.
+      businessDate: query.trim() || mode === 'hold' ? undefined : bd,
       status: mode === 'hold' ? ['held', 'running'] : undefined,
       query: query.trim() || undefined
     })
@@ -38,7 +41,14 @@ export function OrdersScreen({ mode = 'today' }: { mode?: 'today' | 'hold' }) {
   useEffect(() => {
     void load()
     const t = setInterval(() => setNow(Date.now()), 15_000)
-    return () => clearInterval(t)
+    // Re-fetch after any order action on this machine and when the business day rolls / extends.
+    const offA = onEvent('event:alerts', () => void load())
+    const offD = onEvent('event:day', () => void load())
+    return () => {
+      clearInterval(t)
+      offA()
+      offD()
+    }
   }, [load])
 
   const elapsed = (o: OrderDto) => {
@@ -156,9 +166,14 @@ export function OrdersScreen({ mode = 'today' }: { mode?: 'today' | 'hold' }) {
               {o.readyAt && <span className="text-green-700 font-medium">Ready</span>}
               <div className="flex-1" />
               {(o.status === 'held' || o.status === 'running') && (
-                <button onClick={() => resume(o)} className="min-h-0 h-9 px-3 rounded bg-brand-600 text-white font-semibold">
-                  Resume
-                </button>
+                <>
+                  <button onClick={() => setDiscarding(o)} className="min-h-0 h-9 px-3 rounded border border-red-300 bg-white text-red-700 font-semibold" data-testid="discard">
+                    Discard
+                  </button>
+                  <button onClick={() => resume(o)} className="min-h-0 h-9 px-3 rounded bg-brand-600 text-white font-semibold">
+                    Resume
+                  </button>
+                </>
               )}
               {billed(o) && (
                 <button onClick={() => setPaying(o)} className="min-h-0 h-9 px-2 rounded border border-gray-300 bg-white text-gray-700 font-medium">
@@ -194,11 +209,13 @@ export function OrdersScreen({ mode = 'today' }: { mode?: 'today' | 'hold' }) {
                 <SecondaryButton
                   className="mr-auto text-red-600"
                   onClick={() => {
-                    setCancelling(detail)
+                    // Unbilled orders are simply discarded (no PIN); billed ones go through the cancel rules.
+                    if (detail.status === 'held' || detail.status === 'running') setDiscarding(detail)
+                    else setCancelling(detail)
                     setDetail(null)
                   }}
                 >
-                  Cancel order
+                  {detail.status === 'held' || detail.status === 'running' ? 'Discard order' : 'Cancel order'}
                 </SecondaryButton>
               )}
               {billed(detail) && <SecondaryButton onClick={() => setPaying(detail)}>Change payment</SecondaryButton>}
@@ -209,6 +226,16 @@ export function OrdersScreen({ mode = 'today' }: { mode?: 'today' | 'hold' }) {
         >
           <OrderDetail o={detail} />
         </Modal>
+      )}
+      {discarding && (
+        <DiscardDialog
+          order={{ id: discarding.id, kotNo: discarding.kotNo, total: discarding.total, items: discarding.lines.reduce((a, l) => a + l.qty, 0) }}
+          onClose={() => setDiscarding(null)}
+          onDone={() => {
+            setDiscarding(null)
+            void load()
+          }}
+        />
       )}
       {paying && (
         <PaymentDialog

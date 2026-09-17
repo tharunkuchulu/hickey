@@ -2,7 +2,7 @@ import { formatMoney } from '@hickey/shared/money'
 import { ORDER_TYPE_LABELS, PAYMENT_MODE_LABELS, type OrderType, type PaymentMode } from '@hickey/shared/schemas/order'
 import { useEffect, useState } from 'react'
 import type { LiveSummary } from '../../../types/orders'
-import { invoke } from '../lib/api'
+import { invoke, onEvent } from '../lib/api'
 import { useSession } from '../store/session'
 
 /** Today at a glance — mirrors the owner dashboard's Sales Statistics card at the counter. */
@@ -13,7 +13,13 @@ export function LiveViewScreen() {
     const load = () => void invoke('live:summary', {}).then(setS)
     load()
     const t = setInterval(load, 30_000)
-    return () => clearInterval(t)
+    const offA = onEvent('event:alerts', load)
+    const offD = onEvent('event:day', load)
+    return () => {
+      clearInterval(t)
+      offA()
+      offD()
+    }
   }, [])
 
   if (!s) return null

@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { SessionUser } from '../../../main/ipc/contract'
 import { invoke } from '../lib/api'
 
-export type Screen = 'billing' | 'operations' | 'orders' | 'live' | 'reports' | 'menu' | 'settings' | 'hold' | 'users' | 'cash' | 'itemonoff'
+export type Screen = 'billing' | 'operations' | 'orders' | 'live' | 'reports' | 'menu' | 'settings' | 'hold' | 'users' | 'cash' | 'itemonoff' | 'alerts'
 
 interface SessionState {
   user: SessionUser | null

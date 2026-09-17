@@ -5,6 +5,8 @@ import { closeDatabase, initDatabase } from './db'
 import { loadSettings, registerIpcHandlers } from './ipc/handlers'
 import { scheduleDailyBackup } from './services/backup'
 import { initSync } from './services/sync'
+import { initAlerts, setUpdateReady } from './services/alerts'
+import { currentBusinessDate } from './services/day'
 
 // Fixed data folder (%APPDATA%\hickey-pos) so backups/restore docs never depend on the package name.
 app.setPath('userData', join(app.getPath('appData'), 'hickey-pos'))
@@ -68,7 +70,11 @@ if (!app.requestSingleInstanceLock()) {
     registerIpcHandlers()
     createWindow()
     initSync(loadSettings)
-    scheduleDailyBackup(() => loadSettings().billing.dayStartMinutes)
+    initAlerts(loadSettings)
+    scheduleDailyBackup(
+      () => loadSettings().billing.dayStartMinutes,
+      (bd) => currentBusinessDate(loadSettings()) === bd
+    )
 
     if (app.isPackaged) {
       // Counter PCs get the app back automatically after a reboot / power cut.
@@ -79,6 +85,7 @@ if (!app.requestSingleInstanceLock()) {
       autoUpdater.on('error', (err) => console.error('[updater]', err.message))
       autoUpdater.on('update-downloaded', (info) => {
         for (const w of BrowserWindow.getAllWindows()) w.webContents.send('event:update', { version: info.version })
+        setUpdateReady(info.version)
       })
       setTimeout(() => void autoUpdater.checkForUpdates().catch(() => undefined), 15_000)
       setInterval(() => void autoUpdater.checkForUpdates().catch(() => undefined), 6 * 60 * 60_000)

@@ -5,7 +5,7 @@
  */
 import { schema } from '@hickey/db'
 import { PAYMENT_MODE_LABELS, type AppSettings } from '@hickey/shared'
-import { and, asc, between, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, between, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm'
 import { db as getDb } from '../db'
 import { REPORTS, type DailySales, type ReportColumn, type ReportRequest, type ReportResult } from '../../types/reports'
 
@@ -350,7 +350,8 @@ function cancelled(req: ReportRequest) {
   const list = getDb()
     .select()
     .from(orders)
-    .where(and(between(orders.businessDate, req.from, req.to), eq(orders.status, 'cancelled')))
+    // Cancelled *bills* only — discarded holds never had a bill number and are not lost sales.
+    .where(and(between(orders.businessDate, req.from, req.to), eq(orders.status, 'cancelled'), isNotNull(orders.billNo)))
     .orderBy(desc(orders.updatedAt))
     .all()
   const names = new Map(getDb().select({ id: users.id, name: users.name }).from(users).all().map((u) => [u.id, u.name]))
