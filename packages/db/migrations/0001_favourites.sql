@@ -1,0 +1,1 @@
+ALTER TABLE `items` ADD `is_favourite` integer DEFAULT false NOT NULL;

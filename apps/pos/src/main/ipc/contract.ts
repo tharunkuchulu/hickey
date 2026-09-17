@@ -7,9 +7,9 @@ import type { AppSettings, Category, MenuItem, ItemVariant, AddonGroup, Addon } 
 import type { LiveSummary, OrderDto, OrderInput, OrderListFilter, PaymentInput } from '../../types/orders'
 
 export type { KotTicket, LiveSummary, OrderDto, OrderInput, OrderLineDto, OrderLineInput, OrderListFilter, PaymentInput } from '../../types/orders'
-import type { ReportRequest, ReportResult } from '../../types/reports'
+import type { DailySales, ReportRequest, ReportResult } from '../../types/reports'
 import type { CashFlowSummaryDto, CashMovementDto, CashMovementInput, UserDto, UserInput } from '../../types/admin'
-export type { ReportRequest, ReportResult } from '../../types/reports'
+export type { DailySales, ReportRequest, ReportResult } from '../../types/reports'
 export type { CashFlowSummaryDto, CashMovementDto, CashMovementInput, UserDto, UserInput } from '../../types/admin'
 import type { AddonInput, CategoryInput, ItemInput } from '../../types/menu-admin'
 export type { AddonInput, CategoryInput, ItemInput, VariantInput } from '../../types/menu-admin'
@@ -85,8 +85,10 @@ export interface IpcContract {
   'app:businessDate': { req: void; res: string }
   'orders:save': { req: { input: OrderInput; hold?: boolean }; res: OrderDto }
   'orders:kot': { req: { input: OrderInput }; res: OrderActionResult }
-  'orders:saveAndPrint': { req: { input: OrderInput; payments: PaymentInput[]; print?: boolean }; res: OrderActionResult }
-  'orders:settle': { req: { orderId: string; payments: PaymentInput[]; print?: boolean }; res: OrderActionResult }
+  /** `saveOnly` = Petpooja "Save": billed but not printed (status SAVED). `print` only controls the physical printer. */
+  'orders:saveAndPrint': { req: { input: OrderInput; payments: PaymentInput[]; print?: boolean; saveOnly?: boolean }; res: OrderActionResult }
+  'orders:settle': { req: { orderId: string; payments: PaymentInput[]; print?: boolean; saveOnly?: boolean }; res: OrderActionResult }
+  'orders:updatePayment': { req: { orderId: string; payments: PaymentInput[] }; res: OrderDto }
   'orders:cancel': { req: { orderId: string; reason: string }; res: OrderDto }
   'orders:markReady': { req: { orderId: string }; res: OrderDto }
   'orders:reprint': { req: { orderId: string; what: 'bill' | 'kot' }; res: { ok: boolean; error?: string } }
@@ -95,6 +97,7 @@ export interface IpcContract {
   'orders:get': { req: { orderId: string }; res: OrderDto | null }
   'live:summary': { req: { businessDate?: string }; res: LiveSummary }
   'reports:run': { req: ReportRequest; res: ReportResult }
+  'reports:daily': { req: { from: string; to: string }; res: DailySales }
   'reports:export': { req: ReportRequest; res: { ok: boolean; path?: string; error?: string } }
   'reports:print': { req: ReportRequest; res: { ok: boolean; error?: string } }
   'users:list': { req: void; res: UserDto[] }
@@ -102,6 +105,7 @@ export interface IpcContract {
   'cash:summary': { req: { businessDate?: string }; res: CashFlowSummaryDto }
   'cash:add': { req: CashMovementInput; res: CashMovementDto }
   'cash:delete': { req: { id: string }; res: void }
+  'menu:setItemFavourite': { req: { itemId: string; isFavourite: boolean }; res: void }
   'menu:setItemActive': { req: { itemId: string; isActive: boolean }; res: void }
   'sync:status': { req: void; res: SyncStatusDto }
   'sync:now': { req: void; res: SyncStatusDto }

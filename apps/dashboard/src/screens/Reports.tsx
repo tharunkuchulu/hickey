@@ -2,9 +2,11 @@ import { hourlySales, itemPerformance, salesByDay, salesStats, sumBy } from '@hi
 import { formatMoney } from '@hickey/shared/money'
 import { useEffect, useMemo, useState } from 'react'
 import { addDays, fetchRange, todayBusinessDate, type RangeData } from '../lib/data'
+import { DailySales } from './DailySales'
 
-type ReportId = 'day_wise' | 'item_wise' | 'payment_wise' | 'hourly' | 'cancelled'
+type ReportId = 'daily' | 'day_wise' | 'item_wise' | 'payment_wise' | 'hourly' | 'cancelled'
 const LIST: Array<{ id: ReportId; title: string }> = [
+  { id: 'daily', title: 'Daily Sales' },
   { id: 'day_wise', title: 'All Restaurant Report: Day Wise' },
   { id: 'item_wise', title: 'Item Wise: Sales Report' },
   { id: 'payment_wise', title: 'Order Report: Payment Wise' },
@@ -20,8 +22,8 @@ interface Table {
 
 /** Computed in the browser from the synced rows, so numbers match the counter exactly. */
 export function ReportsScreen() {
-  const [id, setId] = useState<ReportId>('day_wise')
-  const [from, setFrom] = useState(addDays(todayBusinessDate(), -6))
+  const [id, setId] = useState<ReportId>('daily')
+  const [from, setFrom] = useState(todayBusinessDate())
   const [to, setTo] = useState(todayBusinessDate())
   const [data, setData] = useState<RangeData | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -36,6 +38,8 @@ export function ReportsScreen() {
   const table = useMemo<Table | null>(() => {
     if (!data) return null
     switch (id) {
+      case 'daily':
+        return null
       case 'day_wise':
         return {
           columns: [
@@ -135,6 +139,7 @@ export function ReportsScreen() {
           ))}
         </div>
         {err && <div className="text-red text-sm">{err}</div>}
+        {id === 'daily' && data && <DailySales data={data} from={from} to={to} />}
         {table && (
           <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
             <table className="w-full text-sm">

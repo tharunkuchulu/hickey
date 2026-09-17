@@ -3,6 +3,7 @@ import { ORDER_TYPE_LABELS, PAYMENT_MODE_LABELS, type OrderType, type PaymentMod
 import { useEffect, useState } from 'react'
 import type { LiveSummary } from '../../../types/orders'
 import { invoke } from '../lib/api'
+import { useSession } from '../store/session'
 
 /** Today at a glance — mirrors the owner dashboard's Sales Statistics card at the counter. */
 export function LiveViewScreen() {
@@ -26,10 +27,20 @@ export function LiveViewScreen() {
         <span className="text-gray-500 text-sm">Business day {s.businessDate}</span>
       </div>
 
+      {s.running > 0 && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900 flex items-center gap-3">
+          <span>
+            <b>{s.running} order{s.running > 1 ? 's' : ''} saved but not billed</b> ({formatMoney(s.runningAmount)}) — not counted in Total Sales until billed.
+          </span>
+          <button onClick={() => useSession.getState().go('hold')} className="ml-auto min-h-0 h-8 px-3 rounded bg-brand-600 text-white text-xs font-semibold">
+            Open them
+          </button>
+        </div>
+      )}
       <div className="grid grid-cols-4 gap-3">
-        <Stat label="Total Sales" value={formatMoney(s.totalSales)} big />
-        <Stat label="Orders" value={String(s.totalOrders)} big />
-        <Stat label="Running / Held" value={String(s.running)} />
+        <Stat label="Total Sales (billed)" value={formatMoney(s.totalSales)} big />
+        <Stat label="Bills" value={String(s.totalOrders)} big />
+        <Stat label="Not billed (running / held)" value={`${s.running} · ${formatMoney(s.runningAmount)}`} />
         <Stat label="Cancelled" value={String(s.cancelled)} />
       </div>
 

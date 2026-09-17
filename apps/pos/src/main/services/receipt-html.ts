@@ -3,7 +3,7 @@
  * Monospace font and a fixed character width give the classic thermal look.
  * Bill/KOT bodies are built in Phase 2 (services/receipts/*.ts) and dropped into this shell.
  */
-export function receiptDocument(body: string, paperWidthMm: 58 | 80, opts: { large?: boolean } = {}): string {
+export function receiptDocument(body: string, paperWidthMm: 58 | 80, opts: { large?: boolean; compact?: boolean } = {}): string {
   // Printable width is a little less than the roll (driver margins vary by printer).
   const contentMm = paperWidthMm === 58 ? 48 : 72
   return `<!doctype html>
@@ -12,10 +12,10 @@ export function receiptDocument(body: string, paperWidthMm: 58 | 80, opts: { lar
   html, body { margin: 0; padding: 0; background: #fff; }
   body {
     width: ${contentMm}mm;
-    padding: 2mm 1mm;
+    padding: ${opts.compact ? '1mm 1mm 0' : '2mm 1mm'};
     font-family: "Courier New", Consolas, monospace;
     font-size: ${(paperWidthMm === 58 ? 10 : 11.5) * (opts.large ? 1.25 : 1)}px;
-    line-height: 1.35;
+    line-height: ${opts.compact ? 1.25 : 1.35};
     color: #000;
   }
   .center { text-align: center; }
@@ -35,7 +35,6 @@ export function receiptDocument(body: string, paperWidthMm: 58 | 80, opts: { lar
   .num { text-align: right; white-space: nowrap; }
   .sub { font-size: 0.85em; color: #000; padding-left: 1ch; }
   thead th.num, td.num { padding-left: 4px; }
-  .kot td.num { padding-right: 10px; width: 3ch; }
-  .kot th.num { padding-right: 10px; }
+  .kot td.num, .kot th.num { width: 4ch; padding-left: 6px; }
 </style></head><body>${body}</body></html>`
 }

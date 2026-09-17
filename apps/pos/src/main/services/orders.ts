@@ -25,8 +25,8 @@ interface Ctx {
 
 // ---------- helpers ----------
 
-function outbox(tx: HickeyDb, tableName: string, rowId: string, payload: Record<string, unknown>) {
-  tx.insert(syncOutbox).values({ tableName, rowId, op: 'upsert', payload, createdAt: nowIso() }).run()
+function outbox(tx: HickeyDb, tableName: string, rowId: string, payload: Record<string, unknown>, op: 'upsert' | 'delete' = 'upsert') {
+  tx.insert(syncOutbox).values({ tableName, rowId, op, payload, createdAt: nowIso() }).run()
 }
 
 function audit(tx: HickeyDb, ctx: Ctx, action: string, entity: string, entityId: string, details: Record<string, unknown> = {}) {
@@ -144,7 +144,7 @@ function hydrate(d: HickeyDb, rows: (typeof orders.$inferSelect)[], settings: Ap
       roundOff: o.roundOff,
       total: o.total,
       payments: oPays.map((p) => ({ id: p.id, mode: p.mode, amount: p.amount, tendered: p.tendered, reference: p.reference })),
-      paymentSummary: modes.length ? modes.map((m) => labels[m] ?? m).join(' + ') : o.status === 'printed' ? 'Not Paid' : '',
+      paymentSummary: modes.length ? modes.map((m) => labels[m] ?? m).join(' + ') : o.status === 'printed' || o.status === 'settled' ? 'Not Paid' : '',
       cancelReason: o.cancelReason,
       printCount: o.printCount,
       createdBy: o.createdBy,
@@ -281,33 +281,74 @@ export function saveWithKot(input: OrderInput, ctx: Ctx): { order: OrderDto; kot
  * The main counter action. Saves, issues the KOT for any un-ticketed lines, assigns the bill number,
  * records payments and marks the order printed. Printing itself happens after commit (caller).
  */
+/**
+ * Bill a cart. `print: false` is Petpooja's "Save": the bill (number, payment, KOT) is created and counts as
+ * a sale, but nothing is printed and the order shows as SAVED until "Print bill" is used.
+ */
 export function saveAndBill(
   input: OrderInput,
   pays: PaymentInput[],
-  ctx: Ctx
+  ctx: Ctx,
+  opts: { print?: boolean } = {}
 ): { order: OrderDto; kot: KotTicket | null } {
   const d = getDb()
   const res = d.transaction((tx) => {
     const t = tx as unknown as HickeyDb
     const id = upsertOrder(t, input, ctx, 'running')
     const kot = issueKot(t, id, ctx)
-    bill(t, id, pays, ctx)
+    bill(t, id, pays, ctx, opts.print !== false)
     return { id, kot }
   })
   return { order: getOrder(res.id, ctx.settings)!, kot: res.kot }
 }
 
 /** Settle an already-saved running/held order (dine-in "Settle" or resumed hold). */
-export function settleOrder(orderId: string, pays: PaymentInput[], ctx: Ctx): OrderDto {
+export function settleOrder(orderId: string, pays: PaymentInput[], ctx: Ctx, opts: { print?: boolean } = {}): OrderDto {
   getDb().transaction((tx) => {
     const t = tx as unknown as HickeyDb
     issueKot(t, orderId, ctx)
-    bill(t, orderId, pays, ctx)
+    bill(t, orderId, pays, ctx, opts.print !== false)
   })
   return getOrder(orderId, ctx.settings)!
 }
 
-function bill(tx: HickeyDb, orderId: string, pays: PaymentInput[], ctx: Ctx) {
+/**
+ * Correct the payment of a billed order (wrong button pressed at the counter). Replaces the payment legs;
+ * the removed legs are queued as deletes so the cloud mirror matches. Cancelled orders can't be changed.
+ */
+export function updatePayments(orderId: string, pays: PaymentInput[], ctx: Ctx): OrderDto {
+  getDb().transaction((tx) => {
+    const t = tx as unknown as HickeyDb
+    const o = t.select().from(orders).where(eq(orders.id, orderId)).get()
+    if (!o) throw new Error('Order not found')
+    if (o.status !== 'printed' && o.status !== 'settled') throw new Error(`Order is ${o.status}; bill it first`)
+    const paid = pays.reduce((a, p) => a + p.amount, 0)
+    if (pays.length > 0 && paid !== o.total) throw new Error(`Payments (${paid}) must equal the bill total (${o.total})`)
+    const now = nowIso()
+    const old = t.select().from(payments).where(eq(payments.orderId, orderId)).all()
+    for (const p of old) {
+      t.delete(payments).where(eq(payments.id, p.id)).run()
+      outbox(t, 'payments', p.id, { id: p.id }, 'delete')
+    }
+    for (const p of pays) {
+      const row = { id: uuidv7(), deviceId: ctx.deviceId, orderId, mode: p.mode, amount: p.amount, tendered: p.tendered ?? null, reference: p.reference ?? null, createdAt: now }
+      t.insert(payments).values(row).run()
+      outbox(t, 'payments', row.id, row)
+    }
+    const unpaid = pays.length === 0 || pays.some((p) => p.mode === 'due')
+    const patch = { settledAt: unpaid ? null : (o.settledAt ?? now), updatedAt: now }
+    t.update(orders).set(patch).where(eq(orders.id, orderId)).run()
+    outbox(t, 'orders', orderId, { ...o, ...patch })
+    audit(t, ctx, 'order.payment_changed', 'orders', orderId, {
+      billNo: o.billNo,
+      from: old.map((p) => `${p.mode}:${p.amount}`),
+      to: pays.map((p) => `${p.mode}:${p.amount}`)
+    })
+  })
+  return getOrder(orderId, ctx.settings)!
+}
+
+function bill(tx: HickeyDb, orderId: string, pays: PaymentInput[], ctx: Ctx, printed = true) {
   const o = tx.select().from(orders).where(eq(orders.id, orderId)).get()!
   if (o.status === 'cancelled') throw new Error('Order is cancelled')
   const lineCount = tx.select({ n: sql<number>`count(*)` }).from(orderItems).where(eq(orderItems.orderId, orderId)).get()!.n
@@ -322,10 +363,10 @@ function bill(tx: HickeyDb, orderId: string, pays: PaymentInput[], ctx: Ctx) {
   const unpaid = pays.length === 0 || pays.some((p) => p.mode === 'due')
   const patch = {
     billNo,
-    status: 'printed' as const,
-    printedAt: now,
+    status: printed ? ('printed' as const) : ('settled' as const),
+    printedAt: printed ? now : o.printedAt,
     settledAt: unpaid ? null : now,
-    printCount: o.printCount + 1,
+    printCount: printed ? o.printCount + 1 : o.printCount,
     updatedAt: now
   }
   tx.update(orders).set(patch).where(eq(orders.id, orderId)).run()
@@ -381,9 +422,12 @@ export function recordReprint(orderId: string, what: 'bill' | 'kot', ctx: Ctx): 
     const o = t.select().from(orders).where(eq(orders.id, orderId)).get()
     if (!o) return
     if (what === 'bill') {
-      const patch = { printCount: o.printCount + 1, updatedAt: nowIso() }
+      // First print of a SAVED bill promotes it to PRINTED; later prints are duplicates.
+      const first = o.printCount === 0
+      const patch = { printCount: o.printCount + 1, updatedAt: nowIso(), ...(first ? { status: 'printed' as const, printedAt: nowIso() } : {}) }
       t.update(orders).set(patch).where(eq(orders.id, orderId)).run()
       outbox(t, 'orders', orderId, { ...o, ...patch })
+      if (first) return
     }
     audit(t, ctx, `${what}.reprint`, 'orders', orderId, { billNo: o.billNo, kotNo: o.kotNo })
   })
@@ -428,6 +472,7 @@ export function liveSummary(bd: string, settings: AppSettings): LiveSummary {
     totalOrders: billed.length,
     totalSales: billed.reduce((a, o) => a + o.total, 0),
     running: list.filter((o) => o.status === 'running' || o.status === 'held').length,
+    runningAmount: list.filter((o) => o.status === 'running' || o.status === 'held').reduce((a, o) => a + o.total, 0),
     cancelled: list.filter((o) => o.status === 'cancelled').length,
     byType,
     byPayment,

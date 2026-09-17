@@ -1,8 +1,9 @@
 import { formatMoney } from '@hickey/shared/money'
 import { ORDER_TYPE_LABELS } from '@hickey/shared/schemas/order'
 import { useCallback, useEffect, useState } from 'react'
-import type { OrderDto } from '../../../types/orders'
+import type { OrderDto, PaymentInput } from '../../../types/orders'
 import { Modal, PrimaryButton, SecondaryButton } from '../components/Modal'
+import { PaymentDialog } from '../components/PaymentDialog'
 import { invoke } from '../lib/api'
 import { useCart } from '../store/cart'
 import { useSession } from '../store/session'
@@ -21,6 +22,7 @@ export function OrdersScreen({ mode = 'today' }: { mode?: 'today' | 'hold' }) {
   const [orders, setOrders] = useState<OrderDto[]>([])
   const [detail, setDetail] = useState<OrderDto | null>(null)
   const [cancelling, setCancelling] = useState<OrderDto | null>(null)
+  const [paying, setPaying] = useState<OrderDto | null>(null)
   const [now, setNow] = useState(Date.now())
 
   const load = useCallback(async () => {
@@ -53,7 +55,22 @@ export function OrdersScreen({ mode = 'today' }: { mode?: 'today' | 'hold' }) {
   async function reprint(o: OrderDto, what: 'bill' | 'kot') {
     const r = await invoke('orders:reprint', { orderId: o.id, what })
     r.ok ? toast.success(`${what === 'bill' ? 'Bill' : 'KOT'} sent to printer`) : toast.error(r.error ?? 'Print failed')
+    if (r.ok) void load()
   }
+
+  /** Wrong payment button pressed at the counter: replace the legs after billing (all screens offer this). */
+  async function changePayment(o: OrderDto, pays: PaymentInput[]) {
+    try {
+      const updated = await invoke('orders:updatePayment', { orderId: o.id, payments: pays })
+      setOrders((list) => list.map((x) => (x.id === o.id ? updated : x)))
+      if (detail?.id === o.id) setDetail(updated)
+      setPaying(null)
+      toast.success(`Bill ${updated.billNoDisplay} payment: ${updated.paymentSummary}`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err))
+    }
+  }
+  const billed = (o: OrderDto) => o.status === 'printed' || o.status === 'settled'
 
   const resume = (o: OrderDto) => {
     useCart.getState().loadOrder(o)
@@ -90,7 +107,9 @@ export function OrdersScreen({ mode = 'today' }: { mode?: 'today' | 'hold' }) {
             <div className="bg-cardblue rounded-t-lg px-3 py-2 flex items-start justify-between">
               <div>
                 <div className="font-bold">BILL: {o.billNoDisplay}</div>
-                <div className="text-xs text-gray-600">{o.status === 'held' ? 'ON HOLD' : o.status === 'cancelled' ? 'CANCELLED' : o.status.toUpperCase()}</div>
+                <div className="text-xs text-gray-600">
+                  {o.status === 'held' ? 'ON HOLD' : o.status === 'cancelled' ? 'CANCELLED' : o.status === 'settled' ? 'SAVED' : o.status.toUpperCase()}
+                </div>
               </div>
               <button onClick={() => setDetail(o)} className="min-h-0 h-8 px-3 rounded-full bg-pill text-white text-xs font-semibold">
                 View
@@ -105,7 +124,15 @@ export function OrdersScreen({ mode = 'today' }: { mode?: 'today' | 'hold' }) {
                 <span>
                   Order Details ({o.lines.length} Items | {formatMoney(o.total)})
                 </span>
-                {o.paymentSummary && <span className="px-2 rounded bg-green-100 text-green-800 text-xs font-medium">{o.paymentSummary}</span>}
+                {o.paymentSummary && (
+                  <button
+                    onClick={() => billed(o) && setPaying(o)}
+                    title={billed(o) ? 'Change payment mode' : ''}
+                    className={`min-h-0 h-6 px-2 rounded text-xs font-medium ${o.paymentSummary === 'Not Paid' ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-800'} ${billed(o) ? 'underline decoration-dotted' : ''}`}
+                  >
+                    {o.paymentSummary}
+                  </button>
+                )}
               </div>
               {o.customerName && <div className="text-xs text-gray-500">{o.customerName} {o.customerPhone}</div>}
               <div className="mt-1 grid grid-cols-2 gap-x-3">
@@ -133,7 +160,17 @@ export function OrdersScreen({ mode = 'today' }: { mode?: 'today' | 'hold' }) {
                   Resume
                 </button>
               )}
-              {o.status === 'printed' || o.status === 'settled' ? (
+              {billed(o) && (
+                <button onClick={() => setPaying(o)} className="min-h-0 h-9 px-2 rounded border border-gray-300 bg-white text-gray-700 font-medium">
+                  Payment
+                </button>
+              )}
+              {o.status === 'settled' && o.printCount === 0 && (
+                <button onClick={() => void reprint(o, 'bill')} className="min-h-0 h-9 px-3 rounded bg-pill text-white font-semibold">
+                  Print bill
+                </button>
+              )}
+              {billed(o) ? (
                 <button
                   onClick={() => void ready(o)}
                   disabled={!!o.readyAt}
@@ -164,13 +201,24 @@ export function OrdersScreen({ mode = 'today' }: { mode?: 'today' | 'hold' }) {
                   Cancel order
                 </SecondaryButton>
               )}
+              {billed(detail) && <SecondaryButton onClick={() => setPaying(detail)}>Change payment</SecondaryButton>}
               {detail.kotNo != null && <SecondaryButton onClick={() => void reprint(detail, 'kot')}>Reprint KOT</SecondaryButton>}
-              {detail.billNo && <PrimaryButton onClick={() => void reprint(detail, 'bill')}>Reprint bill</PrimaryButton>}
+              {detail.billNo && <PrimaryButton onClick={() => void reprint(detail, 'bill')}>{detail.printCount === 0 ? 'Print bill' : 'Reprint bill'}</PrimaryButton>}
             </>
           }
         >
           <OrderDetail o={detail} />
         </Modal>
+      )}
+      {paying && (
+        <PaymentDialog
+          title={`Payment for bill ${paying.billNoDisplay} · ${formatMoney(paying.total)}`}
+          total={paying.total}
+          initial={paying.payments.map((p) => ({ mode: p.mode, amount: p.amount }))}
+          confirmLabel="Update payment"
+          onConfirm={(pays) => changePayment(paying, pays)}
+          onClose={() => setPaying(null)}
+        />
       )}
       {cancelling && (
         <CancelDialog
@@ -196,6 +244,12 @@ function OrderDetail({ o }: { o: OrderDto }) {
         <span className="text-gray-900 capitalize">{o.status}{o.cancelReason ? ` — ${o.cancelReason}` : ''}</span>
         <span>Created</span>
         <span className="text-gray-900">{new Date(o.createdAt).toLocaleString('en-IN')}</span>
+        {o.settledAt && (
+          <>
+            <span>Paid at</span>
+            <span className="text-gray-900">{new Date(o.settledAt).toLocaleString('en-IN')}</span>
+          </>
+        )}
         {o.customerName && (
           <>
             <span>Customer</span>

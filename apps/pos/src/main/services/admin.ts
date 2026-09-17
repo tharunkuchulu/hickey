@@ -140,6 +140,17 @@ export function cashFlowSummary(businessDate: string, settings: AppSettings): Ca
 
 // ---------- item on/off ----------
 
+export function setItemFavourite(itemId: string, isFavourite: boolean): void {
+  getDb().transaction((tx) => {
+    const t = tx as unknown as HickeyDb
+    const it = t.select().from(items).where(eq(items.id, itemId)).get()
+    if (!it) throw new Error('Item not found')
+    const patch = { isFavourite, updatedAt: nowIso() }
+    t.update(items).set(patch).where(eq(items.id, itemId)).run()
+    outbox(t, 'items', itemId, { ...it, ...patch })
+  })
+}
+
 export function setItemActive(itemId: string, isActive: boolean): void {
   getDb().transaction((tx) => {
     const t = tx as unknown as HickeyDb

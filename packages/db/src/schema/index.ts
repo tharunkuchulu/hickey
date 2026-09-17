@@ -60,6 +60,8 @@ export const items = sqliteTable(
     price: integer('price').notNull().default(0),
     foodType: text('food_type', { enum: ['veg', 'nonveg', 'egg'] }).notNull().default('veg'),
     isActive: bool('is_active').notNull().default(true),
+    /** Pinned to the "Favourites" rail at the top of the billing screen (regular / best sellers). */
+    isFavourite: bool('is_favourite').notNull().default(false),
     sortOrder: integer('sort_order').notNull().default(0),
     addonGroupIds: text('addon_group_ids', { mode: 'json' }).$type<string[]>().notNull().default([]),
     createdAt: createdAt(),

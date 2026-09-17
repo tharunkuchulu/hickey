@@ -104,6 +104,8 @@ export interface LiveSummary {
   totalOrders: number
   totalSales: number
   running: number
+  /** Money sitting in running/held orders — not sales until billed. */
+  runningAmount: number
   cancelled: number
   byType: Record<string, { orders: number; amount: number }>
   byPayment: Record<string, { orders: number; amount: number }>

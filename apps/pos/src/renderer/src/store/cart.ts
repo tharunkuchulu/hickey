@@ -2,7 +2,7 @@ import { uuidv7 } from '@hickey/shared/ids'
 import { computeBillTotals, type DiscountType, type RoundingRule } from '@hickey/shared/money'
 import type { OrderType, PaymentMode } from '@hickey/shared/schemas/order'
 import { create } from 'zustand'
-import type { OrderDto, OrderInput, OrderLineInput } from '../../../types/orders'
+import type { OrderDto, OrderInput, OrderLineInput, PaymentInput } from '../../../types/orders'
 
 export interface CartLine extends Omit<OrderLineInput, 'id'> {
   id: string
@@ -37,9 +37,8 @@ interface CartState {
   charges: number
   payChoice: PayChoice
   cashTendered: number | null
-  /** For "Part": second leg of the split. */
-  partMode: PaymentMode
-  partAmount: number
+  /** For "Part": the two legs chosen in the PaymentDialog (empty until chosen). */
+  partPays: PaymentInput[]
   rounding: RoundingRule
   taxPercent: number
 
@@ -51,7 +50,7 @@ interface CartState {
   setLineNotes: (lineId: string, notes: string | null) => void
   remove: (lineId: string) => void
   setDiscount: (type: DiscountType | null, value: number, reason?: string) => void
-  setPay: (patch: Partial<Pick<CartState, 'payChoice' | 'cashTendered' | 'partMode' | 'partAmount'>>) => void
+  setPay: (patch: Partial<Pick<CartState, 'payChoice' | 'cashTendered' | 'partPays'>>) => void
   configure: (cfg: { rounding: RoundingRule; taxPercent: number; defaultOrderType: OrderType; defaultPaymentMode: PayChoice }) => void
   complimentary: boolean
   setComplimentary: (on: boolean) => void
@@ -72,7 +71,7 @@ const empty = () => ({
   discountReason: '',
   charges: 0,
   cashTendered: null as number | null,
-  partAmount: 0,
+  partPays: [] as PaymentInput[],
   complimentary: false
 })
 
@@ -80,7 +79,6 @@ export const useCart = create<CartState>((set, get) => ({
   ...empty(),
   orderType: 'pick_up',
   payChoice: 'card',
-  partMode: 'cash',
   rounding: 'nearest_rupee',
   taxPercent: 0,
 

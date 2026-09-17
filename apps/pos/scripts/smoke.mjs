@@ -159,29 +159,78 @@ assert(rejected, 'underpayment should be rejected')
 const held = await ipc('orders:save', { input: mk([{ itemId: null, name: 'Peach Chiller', variantName: null, unitPrice: 9900, qty: 1, addons: [], notes: null }], []).input, hold: true })
 assert(held.status === 'held' && held.billNo === null, 'hold failed')
 
-// live summary
+// "Save" = bill without printing (Petpooja semantics): counted as a sale, status SAVED (settled), no print
+const r3 = await ipc('orders:saveAndPrint', { ...mk(
+  [{ itemId: null, name: 'Zebra Mocha', variantName: 'sip', unitPrice: 16900, qty: 1, addons: [], notes: null }],
+  [{ mode: 'upi', amount: 16900 }]
+), saveOnly: true })
+assert(r3.order.status === 'settled' && r3.order.printCount === 0 && r3.order.billNo && r3.order.settledAt, `save-without-print wrong: ${JSON.stringify(r3.order)}`)
+
+// part payment: two legs
+const r4 = await ipc('orders:saveAndPrint', mk(
+  [{ itemId: null, name: 'Brownie Blend Frappe', variantName: null, unitPrice: 10900, qty: 1, addons: [], notes: null }],
+  [{ mode: 'cash', amount: 5000 }, { mode: 'card', amount: 5900 }]
+))
+assert(r4.order.payments.length === 2 && r4.order.paymentSummary === 'Cash + Card', `part payment wrong: ${r4.order.paymentSummary}`)
+
+// live summary (2 printed + 1 saved + 1 part-paid = 4 bills)
 const live = await ipc('live:summary', { businessDate: bd })
 assert(
-  live.totalOrders === base.totalOrders + 2 &&
-    live.totalSales === base.totalSales + 19900 &&
-    live.byPayment.card.amount === (base.byPayment.card?.amount ?? 0) + 13900 &&
-    live.byPayment.cash.amount === (base.byPayment.cash?.amount ?? 0) + 6000,
+  live.totalOrders === base.totalOrders + 4 &&
+    live.totalSales === base.totalSales + 19900 + 16900 + 10900 &&
+    live.byPayment.card.amount === (base.byPayment.card?.amount ?? 0) + 13900 + 5900 &&
+    live.byPayment.cash.amount === (base.byPayment.cash?.amount ?? 0) + 6000 + 5000 &&
+    live.runningAmount >= 9900,
   `live wrong: ${JSON.stringify(live)}`
 )
-console.log('live:', live.totalOrders, 'orders', live.totalSales, 'paise; running', live.running)
+console.log('live:', live.totalOrders, 'orders', live.totalSales, 'paise; running', live.running, 'unbilled', live.runningAmount)
+
+// correct the payment of a billed order (wrong button at the counter): card → cash, legs replaced, cloud deletes queued
+const fixed = await ipc('orders:updatePayment', { orderId: r1.order.id, payments: [{ mode: 'cash', amount: 13900 }] })
+assert(fixed.paymentSummary === 'Cash' && fixed.payments.length === 1, `payment update wrong: ${fixed.paymentSummary}`)
+const liveFixed = await ipc('live:summary', { businessDate: bd })
+assert(liveFixed.byPayment.card.amount === live.byPayment.card.amount - 13900 && liveFixed.byPayment.cash.amount === live.byPayment.cash.amount + 13900, 'payment change not reflected in live summary')
+let badFix = false
+try { await ipc('orders:updatePayment', { orderId: held.id, payments: [{ mode: 'cash', amount: 9900 }] }) } catch { badFix = true }
+assert(badFix, 'payment change on an unbilled order must be rejected')
+console.log('payment corrected:', fixed.billNo, fixed.paymentSummary)
+
+// daily sales page data
+const daily = await ipc('reports:daily', { from: bd, to: bd })
+assert(daily.sales.orders === liveFixed.totalOrders && daily.sales.net === liveFixed.totalSales, `daily sales mismatch: ${JSON.stringify(daily.sales)}`)
+assert(daily.byPayment.find((p) => p.mode === 'cash').amount === liveFixed.byPayment.cash.amount, 'daily cash split wrong')
+assert(daily.unbilled.orders >= 1 && daily.bills.some((b) => b.payment === 'Cash 50 + Card 59'), `daily bills wrong: ${JSON.stringify(daily.bills.slice(0, 3))}`)
+console.log('daily sales ok:', daily.sales.orders, 'bills,', daily.byPayment.map((p) => `${p.label} ${p.amount}`).join(', '))
+
+// favourites: the small star on a tile pins it to the Favourites rail (and unpins it again)
+await clickQuick('New Order')
+await waitFor(`document.body.innerText.includes('Favourites')`, 'favourites rail')
+const favBefore = await evaluate(`Number(([...document.querySelectorAll('aside button')].find(b => b.textContent.includes('Favourites'))?.textContent.match(/\d+/) ?? ['0'])[0])`)
+await evaluate(`document.querySelector('section button[title="Add to Favourites"]').click(); true`)
+await waitFor(`document.body.innerText.includes('Favourites (${favBefore + 1})')`, 'favourite count up')
+await clickText('★ Favourites')
+await sleep(200)
+const favTiles = await evaluate(`document.querySelectorAll('section button[title="Remove from Favourites"]').length`)
+assert(favTiles === favBefore + 1, `favourites rail should show ${favBefore + 1} starred items, got ${favTiles}`)
+await shot('04b-favourites')
+await evaluate(`document.querySelector('section button[title="Remove from Favourites"]').click(); true`)
+await waitFor(`document.body.innerText.includes('Favourites (${favBefore})')`, 'favourite count back')
+const snapFav = await ipc('menu:snapshot')
+assert(snapFav.items.filter((i) => i.isFavourite).length === favBefore, 'favourite flag not persisted correctly')
+console.log('favourites ok')
 
 // cancel with reason (admin session)
 const cancelled = await ipc('orders:cancel', { orderId: r2.order.id, reason: 'smoke test' })
 assert(cancelled.status === 'cancelled', 'cancel failed')
 const live2 = await ipc('live:summary', { businessDate: bd })
-assert(live2.totalOrders === base.totalOrders + 1 && live2.cancelled === base.cancelled + 1, 'cancel not reflected in live summary')
+assert(live2.totalOrders === base.totalOrders + 3 && live2.cancelled === base.cancelled + 1, 'cancel not reflected in live summary')
 
 // --- Orders screen renders the cards
 await clickQuick('Orders')
 await waitFor(`document.body.innerText.includes('Total Orders')`, 'orders screen')
 await sleep(300)
 const cards = await evaluate(`[...document.querySelectorAll('main .bg-cardblue')].length`)
-assert(cards >= 3, `expected at least 3 order cards (2 billed + 1 held), got ${cards}`)
+assert(cards >= 5, `expected at least 5 order cards (4 billed + 1 held), got ${cards}`)
 await shot('05-orders')
 
 // Food Is Ready
@@ -309,9 +358,11 @@ const renderReceipt = async (html, name) => {
   writeFileSync(new URL(name + '.png', outDir), Buffer.from(data, 'base64'))
   await evaluate(`document.getElementById('smoke-receipt').remove(); true`)
   console.log('receipt rendered', name, `${h}px tall`)
+  return h
 }
 await renderReceipt(await ipc('orders:receiptHtml', { orderId: r1.order.id, what: 'bill' }), '08-receipt-bill')
-await renderReceipt(await ipc('orders:receiptHtml', { orderId: r2.order.id, what: 'kot' }), '09-receipt-kot')
+const kotH = await renderReceipt(await ipc('orders:receiptHtml', { orderId: r2.order.id, what: 'kot' }), '09-receipt-kot')
+assert(kotH < 120, `KOT slip should be compact, got ${kotH}px`)
 
 console.log('SMOKE OK')
 ws.close()

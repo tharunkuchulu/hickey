@@ -9,7 +9,7 @@ import { dataDir } from '../paths'
 import * as adminSvc from '../services/admin'
 import * as menuAdmin from '../services/menu-admin'
 import * as ordersSvc from '../services/orders'
-import { reportToCsv, runReport } from '../services/reports'
+import { dailySales, reportToCsv, runReport } from '../services/reports'
 import { reportHtml } from '../services/report-print'
 import { backupNow, listBackups } from '../services/backup'
 import { enqueueAllRows, getSyncStatus, kickSync, restoreFromCloud, syncNow, testSync } from '../services/sync'
@@ -149,6 +149,7 @@ export function registerIpcHandlers(): void {
           price: items.price,
           foodType: items.foodType,
           isActive: items.isActive,
+          isFavourite: items.isFavourite,
           sortOrder: items.sortOrder,
           addonGroupIds: items.addonGroupIds
         })
@@ -218,18 +219,24 @@ export function registerIpcHandlers(): void {
     return { order, printError }
   })
 
-  handle('orders:saveAndPrint', async ({ input, payments, print = true }): Promise<OrderActionResult> => {
-    const { order, kot } = ordersSvc.saveAndBill(input, payments, ctx())
+  handle('orders:saveAndPrint', async ({ input, payments, print = true, saveOnly = false }): Promise<OrderActionResult> => {
+    const { order, kot } = ordersSvc.saveAndBill(input, payments, ctx(), { print: !saveOnly })
     kickSync()
-    const printError = print ? await printAfterBill(order, kot, { bill: true, kot: true }) : undefined
+    const printError = print && !saveOnly ? await printAfterBill(order, kot, { bill: true, kot: true }) : undefined
     return { order, printError }
   })
 
-  handle('orders:settle', async ({ orderId, payments, print = true }): Promise<OrderActionResult> => {
-    const order = ordersSvc.settleOrder(orderId, payments, ctx())
+  handle('orders:settle', async ({ orderId, payments, print = true, saveOnly = false }): Promise<OrderActionResult> => {
+    const order = ordersSvc.settleOrder(orderId, payments, ctx(), { print: !saveOnly })
     kickSync()
-    const printError = print ? await printAfterBill(order, ordersSvc.latestKot(orderId), { bill: true, kot: false }) : undefined
+    const printError = print && !saveOnly ? await printAfterBill(order, ordersSvc.latestKot(orderId), { bill: true, kot: false }) : undefined
     return { order, printError }
+  })
+
+  handle('orders:updatePayment', ({ orderId, payments }) => {
+    const o = ordersSvc.updatePayments(orderId, payments, ctx())
+    kickSync()
+    return o
   })
 
   handle('orders:cancel', ({ orderId, reason }) => {
@@ -245,7 +252,12 @@ export function registerIpcHandlers(): void {
     if (!order) return { ok: false, error: 'Order not found' }
     try {
       if (what === 'bill') {
-        await printHtml({ html: billHtml(order, s, { cashierName: currentUser?.name, duplicate: true }) }, s)
+        // A SAVED bill (never printed) prints as the original, not as a duplicate.
+        await printHtml({ html: billHtml(order, s, { cashierName: currentUser?.name, duplicate: order.printCount > 0 }) }, s)
+        if (order.printCount === 0) {
+          const kot = ordersSvc.latestKot(orderId)
+          if (kot && s.receipt.printKot) await printHtml({ html: kotHtml(order, kot, s), copies: s.receipt.kotCopies }, s)
+        }
       } else {
         const kot = ordersSvc.latestKot(orderId)
         if (!kot) return { ok: false, error: 'No KOT for this order' }
@@ -277,6 +289,7 @@ export function registerIpcHandlers(): void {
   // ----- reports -----
 
   handle('reports:run', (req) => runReport(req, loadSettings()))
+  handle('reports:daily', ({ from, to }) => dailySales(from, to))
 
   handle('reports:export', async (req) => {
     const result = runReport(req, loadSettings())
@@ -329,6 +342,7 @@ export function registerIpcHandlers(): void {
   })
 
   handle('menu:setItemActive', ({ itemId, isActive }) => adminSvc.setItemActive(itemId, isActive))
+  handle('menu:setItemFavourite', ({ itemId, isFavourite }) => adminSvc.setItemFavourite(itemId, isFavourite))
 
   // ----- sync & backups -----
 
@@ -347,8 +361,10 @@ export function registerIpcHandlers(): void {
   handle('backup:list', () => listBackups())
   handle('backup:now', () => backupNow())
 
+  // The owner asked for billers to maintain the menu too (they are at the counter daily); users, cash
+  // deletions and restores stay admin-only.
   const adminOnly = () => {
-    if (currentUser?.role !== 'admin') throw new Error('Only an admin can edit the menu')
+    if (!currentUser) throw new Error('Log in to edit the menu')
     const c = ctx()
     return { userId: c.userId, deviceId: c.deviceId }
   }

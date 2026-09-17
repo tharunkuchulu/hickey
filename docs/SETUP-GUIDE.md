@@ -96,11 +96,26 @@ Prefer to build locally instead? `pnpm install && pnpm --filter @hickey/pos dist
 4. **Orders** shows the card; **View** → Reprint bill / Reprint KOT; **Food Is Ready** when done.
 5. Open the dashboard on your phone: the sale is there within seconds (or after the internet returns — the counter never stops billing offline).
 
+## How billing buttons work (same as Petpooja)
+
+| Button | What happens | Counts as sale? |
+|---|---|---|
+| **Save** | Bill is made (bill no., payment recorded) but **nothing prints**; card shows SAVED with a *Print bill* button | Yes |
+| **Save & Print** | Bill + KOT slip print | Yes |
+| **KOT / KOT & Print** | Order goes to the kitchen, stays RUNNING until billed | No (until billed) |
+| **Hold** | Parks the order; resume from *Hold* | No (until billed) |
+
+Running/held orders are shown in Live View and Daily Sales as "saved but not billed" so they're never forgotten.
+**Wrong payment button?** Orders → *Payment* (or View → *Change payment*), or Daily Sales → tap the payment — works after billing.
+**Part payment:** choose *More → Part* → pick the two modes and type the first amount on the number pad.
+**Favourites:** tap ☆ on any item tile (or in Menu) to pin it to the ★ Favourites rail at the top of the menu; ★ removes it.
+**Menu changes** (items, prices, categories, add-ons) can be done by the biller too: Operations → Menu.
+
 ## Daily / later
 
 - Item out of stock → top bar **Item On/Off**. Menu or price changes → Operations → **Menu** (admin).
 - Expenses paid from the drawer → Operations → **Expense** (keeps Cash Flow right). No day-end needed.
-- Reports → ☰ → **Reports** (Excel / Print), or the dashboard from anywhere.
+- Day-end: ☰ → **Reports → Daily Sales** — total, split by Cash / Card / UPI / Not Paid, cancelled, and every bill with its payment and time. Same page on the owner dashboard (Reports → Daily Sales).
 - New app version: bump `version` in `apps/pos/package.json`, `git commit`, `git tag v0.1.1`, `git push --tags`. Terminals update themselves within 6 hours (or ☰ → Check Updates).
 - Handing the dashboard to the owner: either sign in and use **Account → Change sign-in email** (confirmation mail
   goes to the owner's address — needs step 2.4), then hand over the password and let them change it in Account; or

@@ -44,6 +44,7 @@ export const menuItemSchema = z.object({
   price: z.number().int().nonnegative(), // paise; ignored when variants exist
   foodType: z.enum(['veg', 'nonveg', 'egg']).default('veg'),
   isActive: z.boolean().default(true),
+  isFavourite: z.boolean().default(false),
   sortOrder: z.number().int().default(0),
   addonGroupIds: z.array(z.uuid()).default([])
 })

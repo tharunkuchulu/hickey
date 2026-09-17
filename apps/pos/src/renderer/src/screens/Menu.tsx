@@ -100,6 +100,13 @@ export function MenuScreen() {
                       <tr key={i.id} className={`border-t border-gray-100 ${i.isActive ? '' : 'text-gray-400'}`}>
                         <td className="px-3 py-2">
                           <span className="inline-flex items-center gap-2">
+                            <button
+                              onClick={() => void act(i.isFavourite ? 'Removed from Favourites' : 'Added to Favourites', () => invoke('menu:setItemFavourite', { itemId: i.id, isFavourite: !i.isFavourite }))}
+                              title={i.isFavourite ? 'Remove from Favourites' : 'Add to Favourites'}
+                              className={`min-h-0 h-7 w-7 rounded text-base leading-none ${i.isFavourite ? 'text-amber-500' : 'text-gray-300 hover:text-amber-400'}`}
+                            >
+                              {i.isFavourite ? '★' : '☆'}
+                            </button>
                             <FoodMark type={i.foodType} /> {i.name}
                           </span>
                         </td>

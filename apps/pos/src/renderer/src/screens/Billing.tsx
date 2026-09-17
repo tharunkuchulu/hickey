@@ -1,6 +1,7 @@
 import { formatMoney, toPaise } from '@hickey/shared/money'
 import type { MenuItem } from '@hickey/shared/schemas/menu'
 import { ORDER_TYPES, ORDER_TYPE_LABELS, type PaymentMode } from '@hickey/shared/schemas/order'
+import { PaymentDialog } from '../components/PaymentDialog'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PaymentInput } from '../../../types/orders'
 import { Icon } from '../components/icons'
@@ -17,6 +18,8 @@ import { toast } from '../store/toast'
  *   row 2: [menu selector · Search Item · Short Code]            [Dine In | Delivery | Pick Up]
  *   body : dark category rail | item tiles                        | cart (toolbar, customer, items, total, payment, buttons)
  */
+const FAVOURITES = '__favourites__'
+
 export function BillingScreen() {
   const menu = useMenu()
   const cart = useCart()
@@ -32,6 +35,7 @@ export function BillingScreen() {
   const [discounting, setDiscounting] = useState(false)
   const [showCustomer, setShowCustomer] = useState(false)
   const [showMore, setShowMore] = useState(false)
+  const [splitting, setSplitting] = useState(false)
   const [visiblePays, setVisiblePays] = useState<PayChoice[]>(['cash', 'card', 'due', 'not_paid'])
   const [busy, setBusy] = useState(false)
   const codeRef = useRef<HTMLInputElement>(null)
@@ -50,14 +54,30 @@ export function BillingScreen() {
   }, [])
 
   const activeItems = useMemo(() => menu.items.filter((i) => i.isActive), [menu.items])
+  const favourites = useMemo(() => activeItems.filter((i) => i.isFavourite), [activeItems])
   const firstCategoryId = menu.categories.find((c) => c.isActive)?.id
-  const currentCategoryId = categoryId ?? firstCategoryId
+  // "Favourites" is a virtual category pinned to the top of the rail; it opens by default when it has items.
+  const currentCategoryId = categoryId ?? (favourites.length ? FAVOURITES : firstCategoryId)
   const visibleItems = useMemo(() => {
     const q = query.trim().toLowerCase()
-    const list = q ? activeItems.filter((i) => i.name.toLowerCase().includes(q)) : activeItems.filter((i) => i.categoryId === currentCategoryId)
+    const list = q
+      ? activeItems.filter((i) => i.name.toLowerCase().includes(q))
+      : currentCategoryId === FAVOURITES
+        ? favourites
+        : activeItems.filter((i) => i.categoryId === currentCategoryId)
     // Petpooja setting "Item Sorting: A-Z"
     return [...list].sort((a, b) => a.name.localeCompare(b.name))
-  }, [activeItems, currentCategoryId, query])
+  }, [activeItems, favourites, currentCategoryId, query])
+
+  async function toggleFavourite(item: MenuItem) {
+    try {
+      await invoke('menu:setItemFavourite', { itemId: item.id, isFavourite: !item.isFavourite })
+      await menu.load()
+      toast.success(item.isFavourite ? `${item.name} removed from Favourites` : `${item.name} added to Favourites`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err))
+    }
+  }
 
   const variantsFor = (itemId: string) => menu.variants.filter((v) => v.itemId === itemId && v.isActive)
   const addonGroupsFor = (item: MenuItem) => menu.addonGroups.filter((g) => item.addonGroupIds.includes(g.id))
@@ -87,13 +107,9 @@ export function BillingScreen() {
     const total = totals.total
     if (cart.payChoice === 'not_paid') return []
     if (cart.payChoice === 'part') {
-      const second = Math.min(Math.max(cart.partAmount, 0), total)
-      const first = total - second
-      if (second <= 0 || first <= 0) return 'Enter the part amount'
-      return [
-        { mode: 'card', amount: first },
-        { mode: cart.partMode, amount: second }
-      ]
+      const sum = cart.partPays.reduce((a, p) => a + p.amount, 0)
+      if (cart.partPays.length !== 2 || sum !== total) return 'Tap Part and split the payment first'
+      return cart.partPays
     }
     const mode = cart.payChoice as PaymentMode
     return [{ mode, amount: total, tendered: mode === 'cash' ? cart.cashTendered : null }]
@@ -119,11 +135,19 @@ export function BillingScreen() {
     }
   }
 
+  // Petpooja's "Save": the bill is made (number, payment, counted in sales) but nothing prints.
+  // Earlier this only parked the order as RUNNING, which staff mistook for billing.
   const doSave = () =>
     run('Save', async () => {
-      const o = await invoke('orders:save', { input: cart.toInput() })
-      toast.success(`Order saved${o.tableName ? ` on ${o.tableName}` : ''}`)
+      const payments = buildPayments()
+      if (typeof payments === 'string') {
+        toast.error(payments)
+        return
+      }
+      const r = await invoke('orders:saveAndPrint', { input: cart.toInput(), payments, saveOnly: true })
+      toast.success(`Bill ${r.order.billNo} saved (not printed) · ${formatMoney(r.order.total)}`)
       cart.clear()
+      codeRef.current?.focus()
     })
   const doHold = () =>
     run('Hold', async () => {
@@ -202,6 +226,15 @@ export function BillingScreen() {
       <div className="flex-1 min-h-0 grid grid-cols-[150px_1fr_400px]">
         {/* Category rail */}
         <aside className="bg-rail overflow-y-auto text-white">
+          <button
+            onClick={() => {
+              setCategoryId(FAVOURITES)
+              setQuery('')
+            }}
+            className={`w-full text-left px-3 py-3 text-[12px] font-semibold border-b border-black/20 ${!query && currentCategoryId === FAVOURITES ? 'bg-red' : 'bg-black/20 hover:bg-rail-hover'}`}
+          >
+            ★ Favourites <span className="opacity-70 font-normal">({favourites.length})</span>
+          </button>
           {menu.categories
             .filter((c) => c.isActive)
             .map((c) => {
@@ -228,20 +261,36 @@ export function BillingScreen() {
               const variants = variantsFor(item.id)
               const mark = item.foodType === 'veg' ? 'border-l-veg' : item.foodType === 'egg' ? 'border-l-egg' : 'border-l-nonveg'
               return (
-                <button
-                  key={item.id}
-                  onClick={() => tapItem(item)}
-                  className={`h-[72px] rounded-sm bg-white border border-gray-300 border-l-[5px] ${mark} shadow-sm px-2 py-1.5 text-left flex flex-col justify-between active:bg-brand-50`}
-                >
-                  <span className="text-[12.5px] font-medium leading-tight line-clamp-2 text-gray-800">{item.name}</span>
-                  <span className="flex justify-between text-[11px] text-gray-500">
-                    <span>{item.shortCode}</span>
-                    <span className="font-semibold text-gray-700">{variants.length ? `${variants.length} sizes` : formatMoney(item.price, { decimals: 0 })}</span>
-                  </span>
-                </button>
+                <div key={item.id} className="relative">
+                  <button
+                    onClick={() => tapItem(item)}
+                    className={`w-full h-[72px] rounded-sm bg-white border border-gray-300 border-l-[5px] ${mark} shadow-sm px-2 py-1.5 pr-6 text-left flex flex-col justify-between active:bg-brand-50`}
+                  >
+                    <span className="text-[12.5px] font-medium leading-tight line-clamp-2 text-gray-800">{item.name}</span>
+                    <span className="flex justify-between text-[11px] text-gray-500">
+                      <span>{item.shortCode}</span>
+                      <span className="font-semibold text-gray-700">{variants.length ? `${variants.length} sizes` : formatMoney(item.price, { decimals: 0 })}</span>
+                    </span>
+                  </button>
+                  {/* small star: add to / remove from the Favourites rail (does not add the item to the cart) */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void toggleFavourite(item)
+                    }}
+                    title={item.isFavourite ? 'Remove from Favourites' : 'Add to Favourites'}
+                    className={`absolute top-0.5 right-0.5 min-h-0 h-6 w-6 rounded text-[15px] leading-none ${item.isFavourite ? 'text-amber-500' : 'text-gray-300 hover:text-amber-400'}`}
+                  >
+                    {item.isFavourite ? '★' : '☆'}
+                  </button>
+                </div>
               )
             })}
-            {visibleItems.length === 0 && <div className="col-span-full text-gray-400 p-6 text-center">No items</div>}
+            {visibleItems.length === 0 && (
+              <div className="col-span-full text-gray-400 p-6 text-center">
+                {currentCategoryId === FAVOURITES && !query ? 'No favourites yet — tap ☆ on any item to pin it here.' : 'No items'}
+              </div>
+            )}
           </div>
         </section>
 
@@ -381,7 +430,11 @@ export function BillingScreen() {
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
               {payOptions.map((p) => (
                 <label key={p} className="flex items-center gap-1.5 cursor-pointer min-h-8">
-                  <input type="radio" name="pay" className="min-h-0 w-4 h-4 accent-red" checked={cart.payChoice === p} onChange={() => cart.setPay({ payChoice: p })} />
+                  <input type="radio" name="pay" className="min-h-0 w-4 h-4 accent-red" checked={cart.payChoice === p} onChange={() => {
+                      cart.setPay({ payChoice: p })
+                      if (p === 'part') totals.total > 0 ? setSplitting(true) : toast.error('Add items first, then choose Part')
+                    }}
+                  />
                   {PAY_LABELS[p]}
                 </label>
               ))}
@@ -410,20 +463,14 @@ export function BillingScreen() {
             )}
             {cart.payChoice === 'part' && (
               <div className="mt-1 flex items-center gap-2 text-[12px]">
-                <span className="text-gray-600">Card +</span>
-                <select value={cart.partMode} onChange={(e) => cart.setPay({ partMode: e.target.value as PaymentMode })} className="min-h-0 h-8 rounded-sm border border-gray-300 px-2">
-                  <option value="cash">Cash</option>
-                  <option value="upi">UPI</option>
-                  <option value="other">Other</option>
-                </select>
-                <input
-                  inputMode="numeric"
-                  value={cart.partAmount ? cart.partAmount / 100 : ''}
-                  onChange={(e) => cart.setPay({ partAmount: e.target.value ? toPaise(e.target.value) : 0 })}
-                  placeholder="amount"
-                  className="min-h-0 h-8 w-20 rounded-sm border border-gray-300 px-2 text-right"
-                />
-                <span className="ml-auto text-gray-600">Card {formatMoney(Math.max(totals.total - cart.partAmount, 0))}</span>
+                <span className="text-gray-700 font-medium">
+                  {cart.partPays.length === 2 && cart.partPays.reduce((a, p) => a + p.amount, 0) === totals.total
+                    ? cart.partPays.map((p) => `${PAY_LABELS[p.mode]} ${formatMoney(p.amount)}`).join(' + ')
+                    : 'Not split yet'}
+                </span>
+                <button onClick={() => (totals.total > 0 ? setSplitting(true) : toast.error('Add items first'))} className="ml-auto min-h-0 h-8 px-3 rounded-sm bg-pill text-white font-semibold">
+                  Split…
+                </button>
               </div>
             )}
           </div>
@@ -463,6 +510,20 @@ export function BillingScreen() {
             setPicking(null)
             codeRef.current?.focus()
           }}
+        />
+      )}
+      {splitting && (
+        <PaymentDialog
+          title="Part payment"
+          total={totals.total}
+          initial={cart.partPays}
+          startSplit
+          confirmLabel="Use this split"
+          onConfirm={(pays) => {
+            cart.setPay({ payChoice: 'part', partPays: pays })
+            setSplitting(false)
+          }}
+          onClose={() => setSplitting(false)}
         />
       )}
       {noting && (

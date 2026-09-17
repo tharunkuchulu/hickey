@@ -156,8 +156,11 @@ export async function syncNow(opts: { force?: boolean } = {}): Promise<SyncStatu
         if (mine.length === 0) continue
         const latest = new Map<string, (typeof mine)[number]>()
         for (const r of mine) latest.set(r.rowId, r)
-        const payload = [...latest.values()].map((r) => toCloudRow(r.payload))
-        await rpc<number>(s, 'sync_push', { p_token: s.deviceToken, p_table: table, p_rows: payload })
+        // Last op per row wins: an upsert followed by a delete only deletes, and vice versa.
+        const ups = [...latest.values()].filter((r) => r.op !== 'delete')
+        const dels = [...latest.values()].filter((r) => r.op === 'delete')
+        if (ups.length) await rpc<number>(s, 'sync_push', { p_token: s.deviceToken, p_table: table, p_rows: ups.map((r) => toCloudRow(r.payload)) })
+        if (dels.length) await rpc<number>(s, 'sync_delete', { p_token: s.deviceToken, p_table: table, p_ids: dels.map((r) => r.rowId) })
         getDb()
           .delete(syncOutbox)
           .where(inArray(syncOutbox.seq, mine.map((r) => r.seq)))

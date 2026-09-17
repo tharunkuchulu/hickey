@@ -1,15 +1,16 @@
 import { formatMoney } from '@hickey/shared/money'
 import { useEffect, useState } from 'react'
 import { REPORTS, type ReportId, type ReportResult } from '../../../types/reports'
+import { DailySalesView } from './DailySales'
 import { invoke } from '../lib/api'
 import { toast } from '../store/toast'
 
 /**
  * Reports in Petpooja's shape: a left list grouped by area, date filters on top, Excel / Print
- * buttons, then a striped table with a Total / Min / Max / Avg block above the rows.
+ * buttons, then a striped table with a single Total row at the bottom. "Daily Sales" is a custom page.
  */
 export function ReportsScreen() {
-  const [id, setId] = useState<ReportId>('sales_summary')
+  const [id, setId] = useState<ReportId>('daily')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [result, setResult] = useState<ReportResult | null>(null)
@@ -23,7 +24,7 @@ export function ReportsScreen() {
   }, [])
 
   useEffect(() => {
-    if (!from || !to) return
+    if (!from || !to || id === 'daily') return
     setBusy(true)
     invoke('reports:run', { report: id, from, to })
       .then(setResult)
@@ -107,8 +108,9 @@ export function ReportsScreen() {
         </div>
 
         <div className="flex-1 overflow-auto p-4">
+          {id === 'daily' && from && to && <DailySalesView from={from} to={to} />}
           {busy && <div className="text-gray-400 text-sm">Loading…</div>}
-          {result && (
+          {id !== 'daily' && result && (
             <table className="w-full text-[13px] bg-white border border-gray-200">
               <thead className="bg-[#eef2f7] text-gray-700">
                 <tr>
@@ -120,15 +122,6 @@ export function ReportsScreen() {
                 </tr>
               </thead>
               <tbody>
-                {(result.summary ?? []).map((row, i) => (
-                  <tr key={`s${i}`} className="bg-[#fbf7e6] font-semibold">
-                    {result.columns.map((c, ci) => (
-                      <td key={c.key} className={`px-3 py-1.5 ${c.align === 'right' ? 'text-right' : ''}`}>
-                        {ci === 0 ? String(row._label ?? '') : fmt(c, row[c.key])}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
                 {result.rows.map((row, i) => (
                   <tr key={i} className={i % 2 ? 'bg-gray-50' : ''}>
                     {result.columns.map((c) => (
@@ -145,6 +138,15 @@ export function ReportsScreen() {
                     </td>
                   </tr>
                 )}
+                {(result.summary ?? []).map((row, i) => (
+                  <tr key={`s${i}`} className="bg-[#fbf7e6] font-bold border-t-2 border-gray-300">
+                    {result.columns.map((c, ci) => (
+                      <td key={c.key} className={`px-3 py-2 ${c.align === 'right' ? 'text-right' : ''}`}>
+                        {ci === 0 ? String(row._label ?? '') : fmt(c, row[c.key])}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
               </tbody>
             </table>
           )}

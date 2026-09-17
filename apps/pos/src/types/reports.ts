@@ -1,6 +1,7 @@
 /** Report DTOs shared by main and renderer. Pure types only. */
 
 export type ReportId =
+  | 'daily'
   | 'sales_summary'
   | 'item_wise'
   | 'category_wise'
@@ -35,11 +36,37 @@ export interface ReportResult {
   to: string
   columns: ReportColumn[]
   rows: Array<Record<string, string | number | null>>
-  /** Optional footer rows (Total / Min / Max / Avg like Petpooja). */
+  /** Optional footer rows (a single Total row). */
   summary?: Array<Record<string, string | number | null>>
 }
 
+/** Petpooja "Sales Summary" for one day or a range: totals, payment-type split and every bill with its payment. */
+export interface DailySales {
+  from: string
+  to: string
+  sales: { orders: number; gross: number; discount: number; net: number; avgBill: number; items: number }
+  byPayment: Array<{ mode: string; label: string; orders: number; amount: number }>
+  byType: Array<{ type: string; label: string; orders: number; amount: number }>
+  cancelled: { orders: number; amount: number }
+  unbilled: { orders: number; amount: number }
+  bills: Array<{
+    id: string
+    billNo: string
+    billNoDisplay: string
+    kotNo: number | null
+    time: string
+    paidAt: string | null
+    type: string
+    items: number
+    total: number
+    payment: string
+    biller: string
+    status: string
+  }>
+}
+
 export const REPORTS: Array<{ id: ReportId; title: string; group: string; description: string }> = [
+  { id: 'daily', title: 'Daily Sales', group: 'Sales', description: 'Today at a glance: sales, payment types and every bill' },
   { id: 'sales_summary', title: 'Sales Summary: Day Wise', group: 'Sales', description: 'Orders, sales and payment split per day' },
   { id: 'payment_wise', title: 'Order Report: Payment Wise', group: 'Sales', description: 'Collection by Cash / Card / UPI / Other' },
   { id: 'hourly', title: 'Sales Report: Hourly', group: 'Sales', description: 'Sales in each hour of the day' },

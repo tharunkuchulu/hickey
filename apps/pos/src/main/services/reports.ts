@@ -7,7 +7,7 @@ import { schema } from '@hickey/db'
 import { PAYMENT_MODE_LABELS, type AppSettings } from '@hickey/shared'
 import { and, asc, between, desc, eq, inArray, sql } from 'drizzle-orm'
 import { db as getDb } from '../db'
-import { REPORTS, type ReportColumn, type ReportRequest, type ReportResult } from '../../types/reports'
+import { REPORTS, type DailySales, type ReportColumn, type ReportRequest, type ReportResult } from '../../types/reports'
 
 const { orders, orderItems, payments, auditLog, users, cashMovements, items, categories } = schema
 
@@ -16,26 +16,96 @@ const title = (id: ReportRequest['report']) => REPORTS.find((r) => r.id === id)?
 
 type Row = Record<string, string | number | null>
 
+/** One Total row. (Petpooja also shows Min/Max/Avg; staff found those confusing, so they are gone.) */
 function numericSummary(rows: Row[], keys: string[]): Row[] {
   if (rows.length === 0) return []
   const total: Row = { _label: 'Total' }
-  const min: Row = { _label: 'Min.' }
-  const max: Row = { _label: 'Max.' }
-  const avg: Row = { _label: 'Avg.' }
-  for (const k of keys) {
-    const vals = rows.map((r) => Number(r[k] ?? 0))
-    const sum = vals.reduce((a, b) => a + b, 0)
-    total[k] = sum
-    min[k] = Math.min(...vals)
-    max[k] = Math.max(...vals)
-    avg[k] = Math.round(sum / vals.length)
+  for (const k of keys) total[k] = rows.reduce((a, r) => a + Number(r[k] ?? 0), 0)
+  return [total]
+}
+
+const PAY_ORDER = ['cash', 'card', 'upi', 'other', 'due', 'not_paid'] as const
+const PAY_LABEL: Record<string, string> = { cash: 'Cash', card: 'Card', upi: 'UPI', other: 'Other', due: 'Due Payment', not_paid: 'Not Paid' }
+const TYPE_LABEL: Record<string, string> = { pick_up: 'Pick Up', dine_in: 'Dine In', delivery: 'Delivery' }
+
+/** The counter's "Daily Sales" page: Petpooja's Sales Summary plus every bill with its payment mode and time. */
+export function dailySales(from: string, to: string): DailySales {
+  const d = getDb()
+  const all = d.select().from(orders).where(between(orders.businessDate, from, to)).orderBy(desc(orders.createdAt)).all()
+  const billed = all.filter((o) => (BILLED as readonly string[]).includes(o.status))
+  const pays = paymentsFor(all.map((o) => o.id))
+  const qtyByOrder = new Map<string, number>()
+  if (all.length) {
+    const rows = d
+      .select({ orderId: orderItems.orderId, n: sql<number>`sum(${orderItems.qty})` })
+      .from(orderItems)
+      .where(and(inArray(orderItems.orderId, all.map((o) => o.id)), eq(orderItems.isCancelled, false)))
+      .groupBy(orderItems.orderId)
+      .all()
+    for (const r of rows) qtyByOrder.set(r.orderId, r.n)
   }
-  return [total, min, max, avg]
+  const userNames = new Map(d.select({ id: users.id, name: users.name }).from(users).all().map((u) => [u.id, u.name] as const))
+
+  const byPay = new Map<string, { orders: number; amount: number }>()
+  const byType = new Map<string, { orders: number; amount: number }>()
+  const bump = (m: Map<string, { orders: number; amount: number }>, k: string, amount: number) => {
+    const v = m.get(k) ?? { orders: 0, amount: 0 }
+    v.orders++
+    v.amount += amount
+    m.set(k, v)
+  }
+  for (const o of billed) {
+    bump(byType, o.orderType, o.total)
+    const legs = pays.filter((p) => p.orderId === o.id)
+    if (legs.length === 0) bump(byPay, 'not_paid', o.total)
+    for (const p of legs) bump(byPay, p.mode, p.amount)
+  }
+  const cancelledList = all.filter((o) => o.status === 'cancelled')
+  const unbilledList = all.filter((o) => o.status === 'running' || o.status === 'held')
+  const net = billed.reduce((a, o) => a + o.total, 0)
+  const paymentText = (o: (typeof all)[number]) => {
+    if (o.status === 'cancelled') return 'Cancelled'
+    if (o.status === 'running' || o.status === 'held') return 'Not billed'
+    const legs = pays.filter((p) => p.orderId === o.id)
+    if (legs.length === 0) return 'Not Paid'
+    return legs.map((p) => (legs.length > 1 ? `${PAY_LABEL[p.mode] ?? p.mode} ${Math.round(p.amount / 100)}` : PAY_LABEL[p.mode] ?? p.mode)).join(' + ')
+  }
+  return {
+    from,
+    to,
+    sales: {
+      orders: billed.length,
+      gross: billed.reduce((a, o) => a + o.subtotal, 0),
+      discount: billed.reduce((a, o) => a + o.discount, 0),
+      net,
+      avgBill: billed.length ? Math.round(net / billed.length) : 0,
+      items: billed.reduce((a, o) => a + (qtyByOrder.get(o.id) ?? 0), 0)
+    },
+    byPayment: PAY_ORDER.map((m) => ({ mode: m, label: PAY_LABEL[m]!, ...(byPay.get(m) ?? { orders: 0, amount: 0 }) })),
+    byType: ['pick_up', 'dine_in', 'delivery'].map((t) => ({ type: t, label: TYPE_LABEL[t]!, ...(byType.get(t) ?? { orders: 0, amount: 0 }) })),
+    cancelled: { orders: cancelledList.length, amount: cancelledList.reduce((a, o) => a + o.total, 0) },
+    unbilled: { orders: unbilledList.length, amount: unbilledList.reduce((a, o) => a + o.total, 0) },
+    bills: all.map((o) => ({
+      id: o.id,
+      billNo: o.billNo ?? '',
+      billNoDisplay: o.billNo ? `..${o.billNo.slice(-3)}` : '—',
+      kotNo: o.kotNo,
+      time: o.printedAt ?? o.createdAt,
+      paidAt: o.settledAt,
+      type: TYPE_LABEL[o.orderType] ?? o.orderType,
+      items: qtyByOrder.get(o.id) ?? 0,
+      total: o.total,
+      payment: paymentText(o),
+      biller: (o.createdBy && userNames.get(o.createdBy)) || '',
+      status: o.status
+    }))
+  }
 }
 
 export function runReport(req: ReportRequest, settings: AppSettings): ReportResult {
   const base = { report: req.report, title: title(req.report), from: req.from, to: req.to }
   switch (req.report) {
+    case 'daily':
     case 'sales_summary':
       return { ...base, ...salesSummary(req) }
     case 'payment_wise':

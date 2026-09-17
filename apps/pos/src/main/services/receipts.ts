@@ -77,24 +77,32 @@ export function billHtml(o: OrderDto, s: AppSettings, opts: { cashierName?: stri
   return receiptDocument(header + meta + table + totals + footer, receipt.paperWidthMm)
 }
 
+/**
+ * KOT slip in the compact Petpooja shape the kitchen is used to (a few centimetres of paper):
+ *   16/09/26 00:35        KOT - 120
+ *   Pick Up
+ *   - - - - - - - - - - - - - - - -
+ *   Item                      Qty.
+ *   Spanish Latte                1
+ *   - - - - - - - - - - - - - - - -
+ * No outlet name, no token line, normal font size.
+ */
 export function kotHtml(o: OrderDto, kot: KotTicket, s: AppSettings, opts: { duplicate?: boolean } = {}): string {
+  const d = new Date()
+  const stamp = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getFullYear()).slice(-2)} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
   const rows = kot.lines
     .map((l) => {
       const name = l.variantName ? `${l.name} (${l.variantName})` : l.name
       const extras = [...l.addons.map((a) => `+ ${a}`), l.notes ? `* ${l.notes}` : ''].filter(Boolean)
-      return `<tr><td class="num bold">${l.qty}</td><td class="bold">${e(name)}${extras.length ? `<div class="sub">${e(extras.join(' | '))}</div>` : ''}</td></tr>`
+      return `<tr><td class="bold">${e(name)}${extras.length ? `<div class="sub">${e(extras.join(' | '))}</div>` : ''}</td><td class="num bold">${l.qty}</td></tr>`
     })
     .join('')
   const body = `
-    <div class="center bold xl">KOT #${kot.kotNo}</div>
-    <div class="center">Token No: ${kot.kotNo}</div>
-    ${opts.duplicate ? `<div class="center bold">** DUPLICATE **</div>` : ''}
-    <div class="row meta"><span>${e(formatReceiptDateTime(new Date()))}</span><span>${e(TYPE_LABEL[o.orderType])}</span></div>
-    <div class="row meta"><span>Bill: ${e(o.billNo ?? '-')}</span><span>${o.tableName ? `Table ${e(o.tableName)}` : ''}</span></div>
-    ${o.customerName ? `<div>Customer: ${e(o.customerName)}</div>` : ''}
+    <div class="row meta"><span>${e(stamp)}</span><span class="bold">KOT - ${kot.kotNo}${opts.duplicate ? ' (DUP)' : ''}</span></div>
+    <div class="bold">${e(TYPE_LABEL[o.orderType])}${o.tableName ? ` · ${e(o.tableName)}` : ''}${o.customerName ? ` · ${e(o.customerName)}` : ''}</div>
     <div class="rule"></div>
-    <table class="kot"><thead><tr><th class="num">Qty</th><th>Item</th></tr></thead><tbody>${rows}</tbody></table>
-    ${o.notes ? `<div class="rule"></div><div class="bold">Note: ${e(o.notes)}</div>` : ''}
+    <table class="kot"><thead><tr><th>Item</th><th class="num">Qty.</th></tr></thead><tbody>${rows}</tbody></table>
+    ${o.notes ? `<div class="bold">Note: ${e(o.notes)}</div>` : ''}
     <div class="rule"></div>`
-  return receiptDocument(body, s.receipt.paperWidthMm, { large: true })
+  return receiptDocument(body, s.receipt.paperWidthMm, { compact: true })
 }
