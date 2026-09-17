@@ -3,6 +3,15 @@ import { loadConfig, resetClient, saveConfig, supabase } from '../lib/supabase'
 
 type Mode = 'login' | 'forgot' | 'reset' | 'configure'
 
+/** Supabase reports a used/expired mail link as `#error=...&error_description=...`; show it once and clear it. */
+function hashError(): string | null {
+  const p = new URLSearchParams(location.hash.replace(/^#/, ''))
+  const d = p.get('error_description')
+  if (!d) return null
+  history.replaceState(null, '', location.pathname)
+  return p.get('error_code') === 'otp_expired' ? 'That link has already been used or has expired — request a new one.' : d
+}
+
 /**
  * Email + password sign-in with Supabase Auth. "Forgot password" sends Supabase's recovery mail;
  * the link brings the owner back here in `reset` mode to choose a new password.
@@ -14,7 +23,7 @@ export function LoginScreen({ onSignedIn, initialMode = 'login' }: { onSignedIn:
   const [password, setPassword] = useState('')
   const [url, setUrl] = useState('')
   const [anonKey, setAnonKey] = useState('')
-  const [msg, setMsg] = useState<string | null>(null)
+  const [msg, setMsg] = useState<string | null>(() => hashError())
   const [busy, setBusy] = useState(false)
 
   async function run(fn: () => Promise<string | void>) {
@@ -38,7 +47,9 @@ export function LoginScreen({ onSignedIn, initialMode = 'login' }: { onSignedIn:
     })
   const forgot = () =>
     run(async () => {
-      const { error } = await supabase().auth.resetPasswordForEmail(email, { redirectTo: `${location.origin}/#reset` })
+      // No '#...' in redirectTo: Supabase appends its own '#access_token=...&type=recovery' fragment, and a
+      // second '#' would hide the token from the client ("Auth session missing"). App.tsx switches to reset mode.
+      const { error } = await supabase().auth.resetPasswordForEmail(email, { redirectTo: `${location.origin}/` })
       if (error) throw error
       return 'Check your inbox for the reset link.'
     })

@@ -13,6 +13,10 @@ const NAV: Array<{ id: Screen; label: string }> = [
   { id: 'reports', label: 'Reports' }
 ]
 
+// Links from older reset mails look like '/#reset#access_token=...'; fold the double hash so the Supabase
+// client (which reads the URL when it is created) can see the token.
+if (location.hash.startsWith('#reset#')) history.replaceState(null, '', `${location.pathname}#${location.hash.slice(7)}`)
+
 export default function App() {
   const [session, setSession] = useState<'loading' | 'out' | 'in'>('loading')
   const [screen, setScreen] = useState<Screen>('dashboard')
