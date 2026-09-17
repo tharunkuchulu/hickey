@@ -29,7 +29,7 @@
       Keep "Print KOT ticket" on — the KOT slip is the customer's token, exactly like Petpooja.
 - [ ] **Billing User Profile** (Operations): change the Admin PIN, set the biller's PIN, add more billers.
 - [ ] **Cloud Sync**: Enable ✓ → paste Project URL, anon key and DEVICE_TOKEN from `GO-LIVE-VALUES.local.md` →
-      Save → **Test connection** → **Sync now**. Then open https://hickey.tharunvankayala.workers.dev on a phone
+      Save → **Test connection** → **Sync now**. Then open https://hickey.nalsar.workers.dev on a phone
       and check the test bills appear.
 
 ## D. Test with the staff (5 minutes)
