@@ -33,7 +33,8 @@ Do the steps in order; each one says what to copy for the next.
    - Gmail: Host `smtp.gmail.com` · Port `587` · Username = a Gmail address · Password = a Google **App password**
      (Google account → Security → 2-Step Verification → App passwords) · Sender email = that Gmail · Sender name `Hickey`.
    - Or any free transactional provider (Brevo: 300 mails/day) with the SMTP values it shows.
-   Then **Authentication → Rate Limits → emails/h** can be raised (30 is plenty).
+   Supabase raises the limit to 30 mails/hour automatically once custom SMTP is saved (Rate Limits → emails/h).
+   *HICKEY NALSAR: done on 17 Sep 2026 — sender `Hickey <vankayalatharun@gmail.com>` via a Google App password; to revoke or rotate, Google Account → Security → App passwords.*
 5. The owner can change their own **password and sign-in email inside the dashboard** (Account tab) — the password
    change needs no email at all, so it never depends on step 4.
 
