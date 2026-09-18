@@ -1,6 +1,8 @@
 import { formatMoney } from '@hickey/shared/money'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Freshness } from '../components/Freshness'
 import { addDays, fetchRange, resolveTodayBusinessDate, todayBusinessDate, type RangeData } from '../lib/data'
+import { useLiveData } from '../lib/useLiveData'
 
 const TYPE_LABEL: Record<string, string> = { dine_in: 'Dine In', pick_up: 'Pick Up', delivery: 'Delivery' }
 
@@ -18,15 +20,9 @@ export function OrdersScreen() {
       }
     })
   }, [])
-  const [data, setData] = useState<RangeData | null>(null)
-  const [err, setErr] = useState<string | null>(null)
-
-  useEffect(() => {
-    setErr(null)
-    fetchRange(from, to)
-      .then(setData)
-      .catch((e) => setErr(e instanceof Error ? e.message : String(e)))
-  }, [from, to])
+  const live = useLiveData(() => fetchRange(from, to), [from, to])
+  const data: RangeData | null = live.data
+  const err = live.err
 
   const rows = useMemo(() => {
     if (!data) return []
@@ -71,6 +67,7 @@ export function OrdersScreen() {
         <span className="text-sm text-gray-600">
           Grand Total : <b>{formatMoney(grand)}</b>
         </span>
+        <Freshness at={live.at} busy={live.busy} onRefresh={live.refresh} />
         <div className="flex-1" />
         <button onClick={exportCsv} className="h-9 px-3 rounded-md border border-gray-300 bg-white text-sm font-medium">
           Export Excel

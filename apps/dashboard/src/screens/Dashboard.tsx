@@ -1,7 +1,9 @@
 import { FOUR_HOUR_BUCKETS, itemPerformance, salesByDay, salesByFourHours, salesStats } from '@hickey/shared/analytics'
 import { formatMoney } from '@hickey/shared/money'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Freshness } from '../components/Freshness'
 import { addDays, fetchCashMovements, fetchDevices, fetchRange, resolveTodayBusinessDate, todayBusinessDate, type CashMovementRow, type RangeData } from '../lib/data'
+import { useLiveData } from '../lib/useLiveData'
 
 const TYPE_LABEL: Record<string, string> = { dine_in: 'Dine In', pick_up: 'Pick Up', delivery: 'Delivery' }
 const TYPE_COLOR: Record<string, string> = { dine_in: '#1e6fd9', pick_up: '#16a34a', delivery: '#f0873a' }
@@ -16,23 +18,18 @@ export function DashboardScreen() {
       if (!touched.current) setDate(d)
     })
   }, [])
-  const [day, setDay] = useState<RangeData | null>(null)
-  const [trend, setTrend] = useState<RangeData | null>(null)
-  const [cash, setCash] = useState<CashMovementRow[]>([])
-  const [devices, setDevices] = useState<Array<{ label: string; last_seen_at: string | null }>>([])
-  const [err, setErr] = useState<string | null>(null)
-
-  useEffect(() => {
-    setErr(null)
-    Promise.all([fetchRange(date, date), fetchRange(addDays(date, -14), date), fetchCashMovements(date, date), fetchDevices()])
-      .then(([d, t, c, dev]) => {
-        setDay(d)
-        setTrend(t)
-        setCash(c)
-        setDevices(dev)
-      })
-      .catch((e) => setErr(e instanceof Error ? e.message : String(e)))
-  }, [date])
+  const live = useLiveData(
+    () =>
+      Promise.all([fetchRange(date, date), fetchRange(addDays(date, -14), date), fetchCashMovements(date, date), fetchDevices()]).then(
+        ([day, trend, cash, devices]) => ({ day, trend, cash, devices })
+      ),
+    [date]
+  )
+  const day: RangeData | null = live.data?.day ?? null
+  const trend: RangeData | null = live.data?.trend ?? null
+  const cash: CashMovementRow[] = live.data?.cash ?? []
+  const devices: Array<{ label: string; last_seen_at: string | null }> = live.data?.devices ?? []
+  const err = live.err
 
   const stats = useMemo(() => (day ? salesStats(day.orders, day.payments) : null), [day])
   const buckets = useMemo(() => (day ? salesByFourHours(day.orders) : []), [day])
@@ -40,7 +37,7 @@ export function DashboardScreen() {
   const items = useMemo(() => (day ? itemPerformance(day.orders, day.lines) : []), [day])
   const lastSeen = devices.map((d) => d.last_seen_at).filter(Boolean).sort().pop()
 
-  if (err) return <div className="p-6 text-red">{err}</div>
+  if (err && !stats) return <div className="p-6 text-red">{err}</div>
   if (!stats) return <div className="p-6 text-gray-400">Loading…</div>
 
   const maxBucket = Math.max(1, ...buckets.map((b) => b.total))
@@ -56,6 +53,8 @@ export function DashboardScreen() {
         <span className={`text-xs px-2 py-1 rounded-full border ${syncTone(lastSeen)}`} title="When the counter last uploaded to the cloud">
           ● POS synced {lastSeen ? relative(lastSeen) : 'never'}
         </span>
+        <Freshness at={live.at} busy={live.busy} onRefresh={live.refresh} />
+        {err && <span className="text-xs text-red">Refresh failed: {err}</span>}
         <div className="flex-1" />
         <input type="date" value={date} onChange={(e) => { touched.current = true; setDate(e.target.value) }} className="h-9 rounded-md border border-gray-300 px-2 text-sm bg-white" />
       </div>

@@ -1,7 +1,9 @@
 import { hourlySales, itemPerformance, salesByDay, salesStats, sumBy } from '@hickey/shared/analytics'
 import { formatMoney } from '@hickey/shared/money'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Freshness } from '../components/Freshness'
 import { addDays, fetchRange, resolveTodayBusinessDate, todayBusinessDate, type RangeData } from '../lib/data'
+import { useLiveData } from '../lib/useLiveData'
 import { DailySales } from './DailySales'
 
 type ReportId = 'daily' | 'day_wise' | 'item_wise' | 'payment_wise' | 'hourly' | 'cancelled'
@@ -34,15 +36,9 @@ export function ReportsScreen() {
       }
     })
   }, [])
-  const [data, setData] = useState<RangeData | null>(null)
-  const [err, setErr] = useState<string | null>(null)
-
-  useEffect(() => {
-    setErr(null)
-    fetchRange(from, to)
-      .then(setData)
-      .catch((e) => setErr(e instanceof Error ? e.message : String(e)))
-  }, [from, to])
+  const live = useLiveData(() => fetchRange(from, to), [from, to])
+  const data: RangeData | null = live.data
+  const err = live.err
 
   const table = useMemo<Table | null>(() => {
     if (!data) return null
@@ -122,6 +118,7 @@ export function ReportsScreen() {
       </aside>
       <div className="space-y-3 min-w-0">
         <div className="bg-white rounded-xl border border-gray-200 p-3 flex flex-wrap items-end gap-3">
+          <Freshness at={live.at} busy={live.busy} onRefresh={live.refresh} />
           <label className="text-xs text-gray-600">
             From
             <input type="date" value={from} onChange={(e) => { touched.current = true; setFrom(e.target.value) }} className="block h-9 rounded-md border border-gray-300 px-2 text-sm" />

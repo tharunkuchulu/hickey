@@ -59,5 +59,8 @@
   generic-provider server: 0.3.0 → 0.3.1 downloaded, one tap, relaunched as 0.3.1 in 25 s (log shows every step).
 - `closeDatabase()` moved to `will-quit`: `window-all-closed` is skipped on `quitAndInstall`.
 - Daily Sales bills table (counter and dashboard) names the items on each bill ("2× Cappuccino (sip), Samosa").
+- **Dashboard keeps itself fresh** (`lib/useLiveData.ts`): every screen re-fetches each minute while visible, on
+  return to the tab and on tap of "↻ Updated HH:MM". Before, a page loaded once and the owner had to reload to see a
+  bill that had been in the cloud for half an hour — which looked like a sync problem and wasn't.
 - Dev note: the Claude desktop app is an MSIX package, so tools launched from it see a virtualized `%APPDATA%`; the
   real counter/laptop data folder is only visible to Explorer-launched processes (docs in memory, not a product concern).
