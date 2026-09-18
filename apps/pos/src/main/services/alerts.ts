@@ -11,6 +11,7 @@ import { BrowserWindow } from 'electron'
 import { db as getDb } from '../db'
 import type { AlertDto, AlertsStatusDto } from '../ipc/contract'
 import * as day from './day'
+import { log } from './log'
 import { getSyncStatus, onSyncStatus } from './sync'
 
 const { orders, orderItems, diningTables } = schema
@@ -22,6 +23,7 @@ let loadSettings: () => AppSettings = () => {
 }
 let lastPrint: { what: 'bill' | 'kot'; message: string; orderId: string | null; billNo: string | null; at: string } | null = null
 let updateReady: { version: string; at: string } | null = null
+let updateFailed: { message: string; at: string } | null = null
 let lastJson = ''
 let pending: NodeJS.Timeout | null = null
 
@@ -45,6 +47,20 @@ export function recordPrint(r: { what: 'bill' | 'kot' | 'test'; ok: boolean; mes
 
 export function setUpdateReady(version: string): void {
   updateReady = { version, at: new Date().toISOString() }
+  updateFailed = null
+  refresh()
+}
+
+export function setUpdateFailed(message: string): void {
+  updateFailed = { message, at: new Date().toISOString() }
+  updateReady = null
+  refresh()
+}
+
+/** A new check started or found nothing: drop stale update alerts. */
+export function clearUpdate(): void {
+  updateReady = null
+  updateFailed = null
   refresh()
 }
 
@@ -60,7 +76,7 @@ export function refresh(): void {
       lastJson = json
       for (const w of BrowserWindow.getAllWindows()) w.webContents.send('event:alerts', status)
     } catch (err) {
-      console.error('[alerts]', err)
+      log.error('alerts', 'compute failed', err)
     }
   }, 50)
 }
@@ -124,7 +140,18 @@ export function compute(): AlertsStatusDto {
       title: sync.state === 'error' ? `Cloud sync error — ${sync.pending} bills waiting` : `Offline — ${sync.pending} bills waiting to upload`,
       detail: sync.error ?? 'Bills are safe on this machine and will upload when the internet is back.',
       at: sync.lastSyncAt ?? new Date(now).toISOString(),
-      sync: { state: sync.state, pending: sync.pending, error: sync.error }
+      sync: { state: sync.state, pending: sync.pending, parked: sync.parked, error: sync.error }
+    })
+  }
+  if (sync.parked > 0) {
+    alerts.push({
+      id: 'sync_parked',
+      kind: 'sync_problem',
+      severity: 'warning',
+      title: `${sync.parked} row${sync.parked > 1 ? 's' : ''} refused by the cloud — bills keep uploading`,
+      detail: `${sync.parkedError ?? 'data error'}. Retried every hour and on Sync now; if it stays, send the log folder (Settings → About) to support.`,
+      at: sync.lastSyncAt ?? new Date(now).toISOString(),
+      sync: { state: sync.state, pending: sync.pending, parked: sync.parked, error: sync.parkedError }
     })
   }
 
@@ -170,9 +197,20 @@ export function compute(): AlertsStatusDto {
       kind: 'update_ready',
       severity: 'info',
       title: `Hickey POS ${updateReady.version} is ready to install`,
-      detail: 'Restart the app when the counter is free; it takes about a minute.',
+      detail: 'It installs by itself when the counter is quiet for 10 minutes, or tap Restart to update now (about a minute).',
       at: updateReady.at,
       update: { version: updateReady.version }
+    })
+  }
+  if (updateFailed) {
+    alerts.push({
+      id: 'update_failed',
+      kind: 'update_failed',
+      severity: 'warning',
+      title: 'Update download failed',
+      detail: `${updateFailed.message}. It retries every 10 minutes; billing is not affected.`,
+      at: updateFailed.at,
+      update: { version: null, message: updateFailed.message }
     })
   }
 

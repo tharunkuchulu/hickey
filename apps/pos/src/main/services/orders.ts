@@ -58,6 +58,12 @@ export function currentBusinessDate(settings: AppSettings): string {
   return day.currentBusinessDate(settings)
 }
 
+/** When the counter last touched an order (ms epoch) — the updater installs only after a quiet spell. */
+export function lastOrderActivityAt(): number {
+  const r = getDb().select({ at: sql<string | null>`max(${orders.updatedAt})` }).from(orders).get()
+  return r?.at ? new Date(r.at).getTime() : 0
+}
+
 // ---------- reads ----------
 
 export function getOrder(id: string, settings: AppSettings): OrderDto | null {

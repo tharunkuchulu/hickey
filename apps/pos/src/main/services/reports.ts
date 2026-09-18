@@ -28,6 +28,12 @@ const PAY_ORDER = ['cash', 'card', 'upi', 'other', 'due', 'not_paid'] as const
 const PAY_LABEL: Record<string, string> = { cash: 'Cash', card: 'Card', upi: 'UPI', other: 'Other', due: 'Due Payment', not_paid: 'Not Paid' }
 const TYPE_LABEL: Record<string, string> = { pick_up: 'Pick Up', dine_in: 'Dine In', delivery: 'Delivery' }
 
+/** "2× Cappuccino (sip)" / "Samosa" — one order line the way it reads on a bill. */
+export function lineText(name: string, variantName: string | null, qty: number): string {
+  const n = variantName ? `${name} (${variantName})` : name
+  return qty > 1 ? `${qty}× ${n}` : n
+}
+
 /** The counter's "Daily Sales" page: Petpooja's Sales Summary plus every bill with its payment mode and time. */
 export function dailySales(from: string, to: string): DailySales {
   const d = getDb()
@@ -35,14 +41,20 @@ export function dailySales(from: string, to: string): DailySales {
   const billed = all.filter((o) => (BILLED as readonly string[]).includes(o.status))
   const pays = paymentsFor(all.map((o) => o.id))
   const qtyByOrder = new Map<string, number>()
+  const namesByOrder = new Map<string, string[]>()
   if (all.length) {
     const rows = d
-      .select({ orderId: orderItems.orderId, n: sql<number>`sum(${orderItems.qty})` })
+      .select({ orderId: orderItems.orderId, name: orderItems.name, variantName: orderItems.variantName, qty: orderItems.qty })
       .from(orderItems)
       .where(and(inArray(orderItems.orderId, all.map((o) => o.id)), eq(orderItems.isCancelled, false)))
-      .groupBy(orderItems.orderId)
+      .orderBy(orderItems.createdAt)
       .all()
-    for (const r of rows) qtyByOrder.set(r.orderId, r.n)
+    for (const r of rows) {
+      qtyByOrder.set(r.orderId, (qtyByOrder.get(r.orderId) ?? 0) + r.qty)
+      const list = namesByOrder.get(r.orderId) ?? []
+      list.push(lineText(r.name, r.variantName, r.qty))
+      namesByOrder.set(r.orderId, list)
+    }
   }
   const userNames = new Map(d.select({ id: users.id, name: users.name }).from(users).all().map((u) => [u.id, u.name] as const))
 
@@ -94,6 +106,7 @@ export function dailySales(from: string, to: string): DailySales {
       paidAt: o.settledAt,
       type: TYPE_LABEL[o.orderType] ?? o.orderType,
       items: qtyByOrder.get(o.id) ?? 0,
+      itemsText: (namesByOrder.get(o.id) ?? []).join(', '),
       total: o.total,
       payment: paymentText(o),
       biller: (o.createdBy && userNames.get(o.createdBy)) || '',

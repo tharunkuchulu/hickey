@@ -8,26 +8,44 @@ import { nowIso, type AppSettings } from '@hickey/shared'
 import { asc, eq, inArray, sql } from 'drizzle-orm'
 import { BrowserWindow } from 'electron'
 import { db as getDb } from '../db'
+import { log } from './log'
 
 const { syncOutbox, syncState, SYNCED_TABLES } = schema
 
 export interface SyncStatus {
   state: 'disabled' | 'offline' | 'syncing' | 'synced' | 'error'
+  /** Rows waiting to upload (parked rows excluded). */
   pending: number
+  /** Rows the cloud refused (a data error such as a NOT NULL violation) — kept aside so bills keep flowing. */
+  parked: number
+  parkedError: string | null
   lastSyncAt: string | null
   error: string | null
 }
 
-let status: SyncStatus = { state: 'disabled', pending: 0, lastSyncAt: null, error: null }
+let status: SyncStatus = { state: 'disabled', pending: 0, parked: 0, parkedError: null, lastSyncAt: null, error: null }
 let timer: NodeJS.Timeout | null = null
 let running = false
 let backoffUntil = 0
 let backoffMs = 5_000
+let parkedRetryAt = 0
 let loadSettings: () => AppSettings = () => {
   throw new Error('sync not initialised')
 }
 
 const BATCH = 200
+/**
+ * 18 Sep 2026: one items row the cloud rejected (missing NOT NULL column) held 18 bills back for 4 hours,
+ * because a failing batch is retried whole. A data error (PostgREST 400/409/422) is deterministic — the same
+ * payload fails the same way — so such rows are pushed one by one and the refused ones are *parked*:
+ * excluded from the drain, shown in Alerts, retried every hour, on "Sync now" and by "Re-upload all data".
+ * Parking is a prefix on last_error (no schema change): 'parked: <cloud message>'.
+ */
+const PARKED_PREFIX = 'parked: '
+const PARKED_RETRY_MS = 60 * 60_000
+const isParked = sql`coalesce(${syncOutbox.lastError}, '') like ${PARKED_PREFIX + '%'}`
+const notParked = sql`coalesce(${syncOutbox.lastError}, '') not like ${PARKED_PREFIX + '%'}`
+const isDataError = (msg: string) => /^sync_\w+: (400|409|422) /.test(msg)
 
 function snake(key: string): string {
   return key.replace(/[A-Z]/g, (c) => '_' + c.toLowerCase())
@@ -81,16 +99,32 @@ function broadcast() {
 }
 
 function pendingCount(): number {
-  return getDb().select({ n: sql<number>`count(*)` }).from(syncOutbox).get()?.n ?? 0
+  return getDb().select({ n: sql<number>`count(*)` }).from(syncOutbox).where(notParked).get()?.n ?? 0
+}
+
+function parkedInfo(): { parked: number; parkedError: string | null } {
+  const d = getDb()
+  const parked = d.select({ n: sql<number>`count(*)` }).from(syncOutbox).where(isParked).get()?.n ?? 0
+  if (!parked) return { parked: 0, parkedError: null }
+  const first = d.select({ tableName: syncOutbox.tableName, lastError: syncOutbox.lastError }).from(syncOutbox).where(isParked).orderBy(asc(syncOutbox.seq)).get()
+  return { parked, parkedError: first ? `${first.tableName}: ${(first.lastError ?? '').slice(PARKED_PREFIX.length)}` : null }
 }
 
 function setState(patch: Partial<SyncStatus>) {
-  status = { ...status, pending: pendingCount(), ...patch }
+  status = { ...status, pending: pendingCount(), ...parkedInfo(), ...patch }
   broadcast()
 }
 
 export function getSyncStatus(): SyncStatus {
-  return { ...status, pending: pendingCount() }
+  return { ...status, pending: pendingCount(), ...parkedInfo() }
+}
+
+/** Give parked rows another go (after a cloud-side fix, on "Sync now", and once an hour). */
+function unparkAll(): number {
+  const r = getDb().update(syncOutbox).set({ lastError: null }).where(isParked).run()
+  parkedRetryAt = Date.now()
+  if (r.changes) log.info('sync', `retrying ${r.changes} parked row(s)`)
+  return r.changes
 }
 
 export function initSync(settingsLoader: () => AppSettings): void {
@@ -130,6 +164,8 @@ export function enqueueAllRows(): number {
   } satisfies Record<(typeof SYNCED_TABLES)[number], unknown>
   let n = 0
   getDb().transaction((tx) => {
+    // Parked rows are superseded by the fresh copies queued below.
+    tx.delete(syncOutbox).where(isParked).run()
     for (const t of SYNCED_TABLES) {
       const rows = tx.select().from(tables[t]).all() as Array<Record<string, unknown> & { id: string }>
       for (const row of rows) {
@@ -153,10 +189,11 @@ export async function syncNow(opts: { force?: boolean } = {}): Promise<SyncStatu
   if (!opts.force && Date.now() < backoffUntil) return getSyncStatus()
   running = true
   setState({ state: 'syncing', error: null })
+  if (opts.force || Date.now() - parkedRetryAt > PARKED_RETRY_MS) unparkAll()
   try {
     // Drain in batches until empty.
     for (;;) {
-      const rows = getDb().select().from(syncOutbox).orderBy(asc(syncOutbox.seq)).limit(BATCH).all()
+      const rows = getDb().select().from(syncOutbox).where(notParked).orderBy(asc(syncOutbox.seq)).limit(BATCH).all()
       if (rows.length === 0) break
       // Dependency order, last write per row id wins.
       for (const table of SYNCED_TABLES) {
@@ -167,17 +204,43 @@ export async function syncNow(opts: { force?: boolean } = {}): Promise<SyncStatu
         // Last op per row wins: an upsert followed by a delete only deletes, and vice versa.
         const ups = [...latest.values()].filter((r) => r.op !== 'delete')
         const dels = [...latest.values()].filter((r) => r.op === 'delete')
-        if (ups.length) await rpc<number>(s, 'sync_push', { p_token: s.deviceToken, p_table: table, p_rows: ups.map((r) => toCloudRow(r.payload)) })
-        if (dels.length) await rpc<number>(s, 'sync_delete', { p_token: s.deviceToken, p_table: table, p_ids: dels.map((r) => r.rowId) })
+        const pushOne = (r: (typeof mine)[number]) =>
+          r.op === 'delete'
+            ? rpc<number>(s, 'sync_delete', { p_token: s.deviceToken, p_table: table, p_ids: [r.rowId] })
+            : rpc<number>(s, 'sync_push', { p_token: s.deviceToken, p_table: table, p_rows: [toCloudRow(r.payload)] })
+        try {
+          if (ups.length) await rpc<number>(s, 'sync_push', { p_token: s.deviceToken, p_table: table, p_rows: ups.map((r) => toCloudRow(r.payload)) })
+          if (dels.length) await rpc<number>(s, 'sync_delete', { p_token: s.deviceToken, p_table: table, p_ids: dels.map((r) => r.rowId) })
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          if (!isDataError(msg)) throw err
+          // The cloud refused something in this batch: find the culprit(s) row by row and park them.
+          log.warn('sync', `${table}: batch of ${latest.size} refused (${msg}); isolating`)
+          for (const r of latest.values()) {
+            try {
+              await pushOne(r)
+            } catch (e) {
+              const m = e instanceof Error ? e.message : String(e)
+              if (!isDataError(m)) throw e
+              log.error('sync', `${table} ${r.rowId} parked: ${m}`)
+              getDb()
+                .update(syncOutbox)
+                .set({ attempts: sql`${syncOutbox.attempts} + 1`, lastError: (PARKED_PREFIX + m).slice(0, 400) })
+                .where(inArray(syncOutbox.seq, mine.filter((x) => x.rowId === r.rowId).map((x) => x.seq)))
+                .run()
+              for (const x of mine) if (x.rowId === r.rowId) x.lastError = PARKED_PREFIX
+            }
+          }
+        }
         getDb()
           .delete(syncOutbox)
-          .where(inArray(syncOutbox.seq, mine.map((r) => r.seq)))
+          .where(inArray(syncOutbox.seq, mine.filter((r) => r.lastError !== PARKED_PREFIX).map((r) => r.seq)))
           .run()
       }
       // Anything with an unknown table name would loop forever — drop it loudly.
       const unknown = rows.filter((r) => !(SYNCED_TABLES as readonly string[]).includes(r.tableName))
       if (unknown.length) {
-        console.error('[sync] dropping rows for unknown tables', unknown.map((u) => u.tableName))
+        log.error('sync', `dropping rows for unknown tables ${unknown.map((u) => u.tableName).join(',')}`)
         getDb().delete(syncOutbox).where(inArray(syncOutbox.seq, unknown.map((r) => r.seq))).run()
       }
     }
@@ -189,10 +252,11 @@ export async function syncNow(opts: { force?: boolean } = {}): Promise<SyncStatu
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const offline = /fetch failed|ENOTFOUND|ECONNREFUSED|EAI_AGAIN|abort/i.test(msg)
+    if (!offline) log.error('sync', `push failed: ${msg}`)
     getDb()
       .update(syncOutbox)
-      .set({ attempts: sql`${syncOutbox.attempts} + 1`, lastError: msg })
-      .where(sql`${syncOutbox.seq} in (select seq from sync_outbox order by seq limit ${BATCH})`)
+      .set({ attempts: sql`${syncOutbox.attempts} + 1`, lastError: msg.slice(0, 400) })
+      .where(sql`${syncOutbox.seq} in (select seq from sync_outbox where ${notParked} order by seq limit ${BATCH})`)
       .run()
     backoffUntil = Date.now() + backoffMs
     backoffMs = Math.min(backoffMs * 2, 5 * 60_000)

@@ -4,6 +4,7 @@ import { Icon } from './components/icons'
 import { CountBadge } from './components/CountBadge'
 import { ExtendDayModal } from './components/ExtendDayModal'
 import { Toasts } from './components/Modal'
+import { UpdateConfirmModal, UpdatePill } from './components/UpdatePill'
 import { AlertsScreen } from './screens/Alerts'
 import { invoke, onEvent } from './lib/api'
 import { BillingScreen } from './screens/Billing'
@@ -22,6 +23,7 @@ import { useCart } from './store/cart'
 import { useMenu } from './store/menu'
 import { useSession, type Screen } from './store/session'
 import { toast } from './store/toast'
+import { useUpdate } from './store/update'
 
 /** Top-bar quick actions, in Petpooja's order (Item On/Off · Store · Live View · Orders · Recent · Hold · Alerts · Logout). */
 const QUICK: Array<{ id: string; label: string; icon: (p: { size?: number }) => React.ReactNode; screen?: Screen; soon?: boolean; badge?: 'hold' | 'alerts' }> = [
@@ -55,6 +57,8 @@ export default function App() {
   const prompt = useAlerts((s) => s.prompt)
   const bindAlerts = useAlerts((s) => s.bind)
   const closePrompt = useAlerts((s) => s.closePrompt)
+  const bindUpdate = useUpdate((s) => s.bind)
+  const checkUpdate = useUpdate((s) => s.check)
 
   useEffect(() => {
     void invoke('app:info').then(setInfo)
@@ -62,6 +66,7 @@ export default function App() {
     return onEvent('event:sync', (p) => setSync(p as SyncStatusDto))
   }, [])
   useEffect(() => bindAlerts(), [bindAlerts])
+  useEffect(() => bindUpdate(), [bindUpdate])
   useEffect(() => {
     if (user) void loadMenu()
   }, [user, loadMenu])
@@ -138,15 +143,17 @@ export default function App() {
           <Icon.Logout size={20} />
           <span className="text-[9px] mt-0.5 leading-none">Logout</span>
         </button>
+        <UpdatePill />
         <div className="ml-1 h-10 px-3 rounded bg-help text-brand-700 text-[11px] leading-tight flex flex-col justify-center">
           <span className="flex items-center gap-1">
             <span
               className={`inline-block w-2 h-2 rounded-full ${
-                sync?.state === 'synced' ? 'bg-green-500' : sync?.state === 'syncing' ? 'bg-yellow-400' : sync?.state === 'disabled' ? 'bg-gray-400' : 'bg-red'
+                sync?.state === 'synced' ? (sync.parked > 0 ? 'bg-amber-500' : 'bg-green-500') : sync?.state === 'syncing' ? 'bg-yellow-400' : sync?.state === 'disabled' ? 'bg-gray-400' : 'bg-red'
               }`}
             />
             {sync?.state === 'disabled' ? 'Local only' : sync?.state === 'synced' ? 'Synced' : sync?.state === 'syncing' ? 'Syncing…' : sync?.state === 'offline' ? 'Offline' : 'Sync error'}
             {sync && sync.pending > 0 ? ` · ${sync.pending} pending` : ''}
+            {sync && sync.parked > 0 ? ` · ${sync.parked} refused` : ''}
           </span>
           <span className="font-semibold">
             Biller: {user.name}
@@ -177,6 +184,7 @@ export default function App() {
       </main>
 
       {prompt.open && alerts?.day && <ExtendDayModal day={alerts.day} mode={prompt.mode} onClose={closePrompt} />}
+      <UpdateConfirmModal />
 
       {menuOpen && (
         <div className="fixed inset-0 z-30 flex" onMouseDown={() => setMenuOpen(false)}>
@@ -192,7 +200,7 @@ export default function App() {
                 key={s.id}
                 onClick={() => {
                   if (s.id === 'logout') void logout()
-                  else if (s.id === 'updates') void invoke('update:check').then((r) => (r.ok ? toast.success(r.message) : toast.error(r.message)))
+                  else if (s.id === 'updates') void checkUpdate()
                   else go(s.id)
                 }}
                 className={`text-left px-6 py-3.5 text-[15px] hover:bg-white/10 ${screen === s.id ? 'bg-white/15' : ''}`}

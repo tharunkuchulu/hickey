@@ -50,6 +50,9 @@
 
 ## F. Updates
 
-1. Bump `version` in `apps/pos/package.json`, commit, `git tag v0.1.4` (same number), `git push origin main --tags`.
-2. GitHub Actions builds the installer and publishes the Release (~8 min); every counter updates itself within
-   6 hours (or ☰ → Check Updates) and installs on the next app close.
+1. Bump `version` in `apps/pos/package.json`, commit, `git tag v0.3.2` (same number), `git push origin main --tags`.
+2. GitHub Actions builds the installer and publishes the Release (~8 min). Every counter on **0.3.1 or later**
+   downloads it within 6 hours (grey ↓ pill in the top bar), then installs it by itself the first time the counter
+   is quiet for 10 minutes — or on tap of the green **Restart to update**. Staff never touch anything.
+3. New cloud migration in `supabase/migrations/`? Run it in the Supabase SQL Editor **before** tagging — the
+   terminals must never talk to a cloud that is older than their code.

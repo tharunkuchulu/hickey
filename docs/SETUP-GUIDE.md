@@ -10,7 +10,8 @@ Do the steps in order; each one says what to copy for the next.
 1. Go to https://supabase.com → **Start your project** → sign up (GitHub or email).
 2. **New project** → Name `hickey` · Region **Mumbai (ap-south-1)** · generate a database password (save it) · Plan **Free** → Create. Wait ~2 min.
 3. Left menu **SQL Editor** → **New query** → paste the whole file `supabase/migrations/0001_init.sql` → **Run**. (Creates tables, security rules, sync functions.)
-   Project created before 17 Sep 2026 14:30? Also run `supabase/migrations/0002_rls_no_recursion.sql` (fixes "infinite recursion detected in policy" on the dashboard).
+   Then run **every later file in `supabase/migrations/` in order** (0002 … 0004) — each one is safe to re-run.
+   *HICKEY NALSAR: 0001–0004 applied (0004 on 18 Sep 2026 23:20).*
 4. Same SQL editor, run and **copy the two results**:
    ```sql
    insert into orgs (name) values ('HICKEY NALSAR') returning id;     -- → ORG_ID
@@ -133,7 +134,7 @@ billed before 03:30 belongs to the previous date, like in Petpooja. If the cafe 
 - Item out of stock → top bar **Item On/Off**. Menu or price changes → Operations → **Menu** (admin).
 - Expenses paid from the drawer → Operations → **Expense** (keeps Cash Flow right). No day-end needed.
 - Day-end: ☰ → **Reports → Daily Sales** — total, split by Cash / Card / UPI / Not Paid, cancelled, and every bill with its payment and time. Same page on the owner dashboard (Reports → Daily Sales).
-- New app version: bump `version` in `apps/pos/package.json`, `git commit`, `git tag v0.1.1`, `git push --tags`. Terminals update themselves within 6 hours (or ☰ → Check Updates).
+- New app version: bump `version` in `apps/pos/package.json`, `git commit`, `git tag v0.1.1`, `git push --tags`. Terminals update themselves (see **Updates** below).
 - Handing the dashboard to the owner: either sign in and use **Account → Change sign-in email** (confirmation mail
   goes to the owner's address — needs step 2.4), then hand over the password and let them change it in Account; or
   create them as a second user (step 2.1–2.2). Later, Supabase **Project Settings → Transfer project** moves the
@@ -141,12 +142,35 @@ billed before 03:30 belongs to the previous date, like in Petpooja. If the cafe 
 - Cloud looks incomplete (menu missing, reports empty although bills exist)? Terminal → Settings → Cloud Sync →
   **Re-upload all data** (admin).
 
+## Updates (v0.3.1 and later) — nobody at the counter has to do anything
+
+The app checks GitHub 15 s after it opens and every 6 hours, downloads the new version in the background and
+shows what is going on in the top bar, left of the pink box:
+
+| Top bar shows | Meaning | What to do |
+|---|---|---|
+| nothing | up to date, or still checking | nothing |
+| grey **↓ Update 43%** | downloading (≈110 MB) | keep the app open; billing works as usual |
+| green **Restart to update** | downloaded | nothing — it installs by itself the first time the counter is quiet for 10 minutes (no touch, no bill, empty cart); or tap it → *Restart now* (about a minute, the app reopens by itself) |
+| red **Update failed** | download failed (no internet / GitHub down) | nothing — it retries every 10 minutes; Alerts shows the reason |
+
+Closing the app with a downloaded update also installs it (fallback). Bills, settings and the printer setup are
+never touched by an update.
+
+**Terminals still on 0.2.0 / 0.3.0** have the old updater (no progress, download restarts from zero on every
+relaunch). Get them onto 0.3.1 once by hand: Chrome → https://github.com/tharunkuchulu/hickey/releases/latest →
+download `Hickey-POS-Setup-0.3.1.exe` → close Hickey POS → run it → Next → Install. From then on it is automatic.
+
+**Log file:** ☰ → Settings → About → **Open folder** (`%APPDATA%\hickey-pos\logs\hickey.log`) — every update
+step, sync problem and app error is written there. When something is odd, send that file.
+
 ## If something goes wrong
 
 | Symptom | Fix |
 |---|---|
 | "Test connection" fails | URL must look like `https://xxxx.supabase.co`; token is the one from `register_device` (run it again to get a new one) |
 | Dashboard says "No rows" | `org_members` row missing (step 2.2) or the POS hasn't synced yet |
+| Dashboard pill "POS synced 3 hours ago" turns amber/red while the cafe is open | Counter → Alerts. *Offline* = internet; *refused by the cloud* = a row the cloud rejected is parked, bills keep uploading — send the log file. The 18 Sep 2026 case (items row missing `is_favourite`) is fixed by migration 0004. |
 | Reset-password link opens localhost | Step 2.3 Site URL / Redirect URL |
 | "email rate limit exceeded" / reset mail never arrives | Step 2.4 custom SMTP (built-in mailer = 2/hour). Meanwhile: Account tab → Change password (no mail), or SQL `update auth.users set encrypted_password = extensions.crypt('NEW', extensions.gen_salt('bf')) where email = '...'` |
 | Printer prints blank or cuts early | Driver paper size 80 mm, or switch Settings → Print → 58 mm if the roll is narrow |

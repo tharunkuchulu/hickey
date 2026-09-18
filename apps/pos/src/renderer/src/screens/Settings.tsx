@@ -206,6 +206,7 @@ export function SettingsScreen() {
               {syncStatus && (
                 <span className="text-sm text-gray-600">
                   Status: <b className="capitalize">{syncStatus.state}</b> · {syncStatus.pending} pending
+                  {syncStatus.parked > 0 ? ` · ${syncStatus.parked} refused by the cloud (${syncStatus.parkedError})` : ''}
                   {syncStatus.lastSyncAt ? ` · last ${new Date(syncStatus.lastSyncAt).toLocaleString('en-IN')}` : ''}
                   {syncStatus.error ? ` · ${syncStatus.error}` : ''}
                 </span>
@@ -284,6 +285,15 @@ export function SettingsScreen() {
               <div>Version {info.version}</div>
               <div>Device ID: {info.deviceId}</div>
               <div>Data folder: {info.dataDir}</div>
+              <div className="flex items-center gap-2">
+                Log folder: {info.logDir}
+                <button
+                  onClick={() => void invoke('app:openLogs').then((r) => !r.ok && toast.error(r.error ?? 'Could not open'))}
+                  className="min-h-0 h-7 px-2 rounded border border-gray-300 bg-white text-xs font-medium"
+                >
+                  Open folder
+                </button>
+              </div>
               <div>Logged in as {user?.name} ({user?.role})</div>
             </div>
           </Section>

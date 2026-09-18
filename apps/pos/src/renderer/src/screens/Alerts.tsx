@@ -6,8 +6,9 @@ import { useAlerts } from '../store/alerts'
 import { useCart } from '../store/cart'
 import { useSession } from '../store/session'
 import { toast } from '../store/toast'
+import { useUpdate } from '../store/update'
 
-const ICON: Record<AlertDto['kind'], string> = { hold_stale: '⏸', sync_problem: '☁', print_failed: '🖨', day_end: '🌙', update_ready: '⬆' }
+const ICON: Record<AlertDto['kind'], string> = { hold_stale: '⏸', sync_problem: '☁', print_failed: '🖨', day_end: '🌙', update_ready: '⬆', update_failed: '⬆' }
 const TONE: Record<AlertDto['severity'], string> = {
   error: 'border-l-red-500 bg-red-50',
   warning: 'border-l-amber-400 bg-amber-50',
@@ -19,6 +20,8 @@ export function AlertsScreen() {
   const status = useAlerts((s) => s.status)
   const openPrompt = useAlerts((s) => s.openPrompt)
   const go = useSession((s) => s.go)
+  const openUpdate = useUpdate((s) => s.openConfirm)
+  const checkUpdate = useUpdate((s) => s.check)
   const [discarding, setDiscarding] = useState<AlertDto['order'] | null>(null)
   const alerts = status?.alerts ?? []
 
@@ -30,7 +33,9 @@ export function AlertsScreen() {
   }
   async function syncNow() {
     const st = await invoke('sync:now')
-    st.state === 'synced' ? toast.success('Everything is synced') : toast.error(st.error ?? `Sync ${st.state}`)
+    if (st.state !== 'synced') toast.error(st.error ?? `Sync ${st.state}`)
+    else if (st.parked > 0) toast.error(`${st.parked} row(s) still refused: ${st.parkedError ?? 'data error'}`)
+    else toast.success('Everything is synced')
   }
   async function testPrinter() {
     const s = await invoke('settings:get')
@@ -82,8 +87,14 @@ export function AlertsScreen() {
         )
       case 'update_ready':
         return (
-          <button onClick={() => void invoke('update:install')} className={`${btn} bg-pill text-white`}>
+          <button onClick={openUpdate} className={`${btn} bg-pill text-white`}>
             Restart to update
+          </button>
+        )
+      case 'update_failed':
+        return (
+          <button onClick={() => void checkUpdate()} className={`${btn} border border-gray-300 bg-white`}>
+            Retry now
           </button>
         )
     }

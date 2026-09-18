@@ -36,3 +36,28 @@
   Discards are excluded from "cancelled" counts and the Cancel Order report (those are cancelled *bills*).
 - **Alerts** live in main-process memory (`services/alerts.ts`) and are pushed as `event:alerts`; the Hold badge rides on the same payload.
 - Billing row reduced to KOT · Save & Print · Save · Hold after staff confusion on day one.
+
+## v0.3.1 (19 Sep 2026) — after the 18 Sep sync stall
+
+- **Cause of the stall:** a menu edit at 19:39 queued an `items` row without `is_favourite`; `jsonb_populate_recordset`
+  turns a missing key into NULL → NOT NULL violation → 400 → the same batch retried every 5 min for 4 hours while 18 bills
+  waited behind it. Two fixes so it cannot recur in either place:
+  - **Cloud** (migration 0004): `sync_push` coalesces every missing/null value with the column default. Old terminals and
+    partial payloads can no longer poison a batch on a NOT NULL column.
+  - **Counter** (`services/sync.ts`): a data error (PostgREST 400/409/422) is pushed row by row and the refused rows are
+    **parked** (`last_error = 'parked: …'`, no schema change) — excluded from the drain, shown in Alerts and in the header
+    (`· N refused`), retried hourly, on *Sync now* and by *Re-upload all data*. Network/auth errors keep the old
+    whole-batch retry. `saveItem` now sends the full row.
+- **Owner sees staleness**: the dashboard's "POS synced X ago" pill turns amber after 15 min and red after 2 h.
+- **Log file** `%APPDATA%\hickey-pos\logs\hickey.log` (`services/log.ts`, 2 MB rotation, never throws): app start/quit,
+  every updater event (electron-updater's logger), sync failures/parked rows, IPC failures. Settings → About → Open folder.
+- **Updater rewritten** (`services/updater.ts`): a real state machine (idle / checking / up_to_date / downloading /
+  downloaded / error) broadcast as `event:update`; header pill + confirm modal; `quitAndInstall(true, true)` = silent NSIS
+  install with self-relaunch; **auto-install when quiet** (10 min without input via `powerMonitor.getSystemIdleTime()`,
+  10 min without a bill, and the renderer confirms an empty cart) so illiterate staff never deal with updates;
+  install-on-quit kept as fallback; failed download → alert + retry in 10 min. Verified on the laptop with a local
+  generic-provider server: 0.3.0 → 0.3.1 downloaded, one tap, relaunched as 0.3.1 in 25 s (log shows every step).
+- `closeDatabase()` moved to `will-quit`: `window-all-closed` is skipped on `quitAndInstall`.
+- Daily Sales bills table (counter and dashboard) names the items on each bill ("2× Cappuccino (sip), Samosa").
+- Dev note: the Claude desktop app is an MSIX package, so tools launched from it see a virtualized `%APPDATA%`; the
+  real counter/laptop data folder is only visible to Explorer-launched processes (docs in memory, not a product concern).

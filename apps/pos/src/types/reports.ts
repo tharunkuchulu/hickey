@@ -57,7 +57,10 @@ export interface DailySales {
     time: string
     paidAt: string | null
     type: string
+    /** Quantity of items on the bill. */
     items: number
+    /** "2× Cappuccino (sip), Samosa" — what was sold, the way staff and the owner read a bill. */
+    itemsText: string
     total: number
     payment: string
     biller: string

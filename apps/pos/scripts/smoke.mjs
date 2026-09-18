@@ -6,7 +6,9 @@
  *
  * Usage: node scripts/smoke.mjs [port]
  */
-import { mkdirSync, writeFileSync } from 'node:fs'
+import fs, { mkdirSync, writeFileSync } from 'node:fs'
+import http from 'node:http'
+import path from 'node:path'
 
 const port = Number(process.argv[2] ?? 9222)
 const outDir = new URL('./out/', import.meta.url)
@@ -251,7 +253,9 @@ const daily = await ipc('reports:daily', { from: bd, to: bd })
 assert(daily.sales.orders === liveFixed.totalOrders && daily.sales.net === liveFixed.totalSales, `daily sales mismatch: ${JSON.stringify(daily.sales)}`)
 assert(daily.byPayment.find((p) => p.mode === 'cash').amount === liveFixed.byPayment.cash.amount, 'daily cash split wrong')
 assert(daily.unbilled.orders >= 1 && daily.bills.some((b) => b.payment === 'Cash 50 + Card 59'), `daily bills wrong: ${JSON.stringify(daily.bills.slice(0, 3))}`)
-console.log('daily sales ok:', daily.sales.orders, 'bills,', daily.byPayment.map((p) => `${p.label} ${p.amount}`).join(', '))
+// v0.3.1: the bills table names what was sold ("2× Cappuccino (sip), Samosa"), not just a count
+assert(daily.bills.every((b) => typeof b.itemsText === 'string') && daily.bills.some((b) => b.itemsText === 'Cappuccino (chota), Simple Blend Frappe'), `itemsText missing: ${JSON.stringify(daily.bills.slice(0, 4).map((b) => [b.items, b.itemsText]))}`)
+console.log('daily sales ok:', daily.sales.orders, 'bills,', daily.byPayment.map((p) => `${p.label} ${p.amount}`).join(', '), '| first bill:', daily.bills[0]?.itemsText)
 
 // favourites: the small star on a tile pins it to the Favourites rail (and unpins it again)
 await clickQuick('New Order')
@@ -381,6 +385,16 @@ await ipc('menu:setItemActive', { itemId: tea.id, isActive: false })
 assert((await ipc('menu:snapshot')).items.find((i) => i.id === tea.id).isActive === false, 'item off failed')
 await ipc('menu:setItemActive', { itemId: tea.id, isActive: true })
 
+// v0.3.1 updater: a real state machine instead of a guessed toast; dev build reports idle
+const upd = await ipc('update:status')
+assert(upd.state === 'idle' && upd.current === (await ipc('app:info')).version && typeof upd.message === 'string', `update:status wrong: ${JSON.stringify(upd)}`)
+assert((await ipc('update:check')).state === 'idle', 'update:check in dev must stay idle')
+const inst = await ipc('update:install', { reason: 'tap' })
+assert(inst.ok === false && /No update/.test(inst.message), `update:install must refuse without a download: ${JSON.stringify(inst)}`)
+const appInfo = await ipc('app:info')
+assert(appInfo.logDir.endsWith('logs') && fs.existsSync(path.join(appInfo.logDir, 'hickey.log')) && fs.readFileSync(path.join(appInfo.logDir, 'hickey.log'), 'utf8').includes('[app] start'), 'hickey.log missing or without the start line')
+console.log('updater ok:', upd.state, upd.message, '| log:', path.join(appInfo.logDir, 'hickey.log'))
+
 // sync is disabled until configured; a local snapshot can be taken on demand
 const syncSt = await ipc('sync:status')
 assert(syncSt.state === 'disabled' && syncSt.pending >= 1, `sync status wrong: ${JSON.stringify(syncSt)}`)
@@ -389,6 +403,59 @@ assert(bad.ok === false, 'sync test should fail against an invalid host')
 const bk = await ipc('backup:now')
 assert(bk.sizeBytes > 10000 && (await ipc('backup:list')).some((b) => b.file === bk.file), 'backup failed')
 console.log('sync disabled with', syncSt.pending, 'pending; backup', bk.file, bk.sizeBytes, 'bytes')
+
+// v0.3.1: a row the cloud refuses (data error) is parked and the bills behind it still upload.
+// Fake Supabase on localhost: refuses any items row named 'Poison Item' with a 400 until told otherwise.
+{
+  const seen = { items: [], orders: [], deletes: 0, pings: 0 }
+  const poisonName = `Poison ${Date.now()}` // unique per run: earlier runs' soft-deleted rows are re-queued by enqueueAllRows
+  let poison = true
+  const server = http.createServer((req, res) => {
+    let body = ''
+    req.on('data', (c) => (body += c))
+    req.on('end', () => {
+      const fn = req.url.split('/').pop()
+      const b = body ? JSON.parse(body) : {}
+      const reply = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)) }
+      if (fn === 'sync_ping') { seen.pings++; return reply(200, { device: 'fake', org_id: 'x' }) }
+      if (fn === 'sync_delete') { seen.deletes += b.p_ids.length; return reply(200, b.p_ids.length) }
+      if (fn !== 'sync_push') return reply(404, { message: 'no such rpc' })
+      if (b.p_table === 'items' && poison && b.p_rows.some((r) => r.name === poisonName)) return reply(400, { message: 'null value in column "is_favourite" of relation "items" violates not-null constraint' })
+      if (b.p_table === 'items') seen.items.push(...b.p_rows.map((r) => r.name))
+      if (b.p_table === 'orders') seen.orders.push(...b.p_rows.map((r) => r.id))
+      return reply(200, b.p_rows.length)
+    })
+  })
+  await new Promise((r) => server.listen(0, '127.0.0.1', r))
+  const port = server.address().port
+  const settings0 = await ipc('settings:get')
+  assert(settings0.sync.enabled === false, 'smoke must not run with real Cloud Sync enabled on this machine')
+  await ipc('settings:set', { ...settings0, sync: { ...settings0.sync, enabled: true, supabaseUrl: `http://127.0.0.1:${port}`, supabaseAnonKey: 'fake', deviceToken: 'fake-token' } })
+  const st0 = await ipc('sync:now')
+  assert(st0.state === 'synced' && st0.pending === 0 && st0.parked === 0, `fake cloud initial drain failed: ${JSON.stringify(st0)}`)
+  const poisonCat = await ipc('menu:saveCategory', { name: 'Poison Cat' })
+  const poisonId = await ipc('menu:saveItem', { categoryId: poisonCat, name: poisonName, shortCode: null, price: 100, foodType: 'veg', variants: [], addonGroupIds: [] })
+  const behind = await ipc('orders:saveAndPrint', mk([{ itemId: null, name: 'Behind Poison', variantName: null, unitPrice: 1000, qty: 1, addons: [], notes: null }], [{ mode: 'cash', amount: 1000 }]))
+  const st1 = await ipc('sync:now')
+  assert(st1.state === 'synced' && st1.pending === 0 && st1.parked >= 1 && /not-null/.test(st1.parkedError ?? ''), `poison row not parked: ${JSON.stringify(st1)}`)
+  assert(seen.orders.includes(behind.order.id), 'the bill behind the refused row did not upload')
+  assert(!seen.items.includes(poisonName), 'refused row must not count as uploaded')
+  const parkedAlert = (await ipc('alerts:status')).alerts.find((a) => a.id === 'sync_parked')
+  assert(parkedAlert && parkedAlert.kind === 'sync_problem' && parkedAlert.sync.parked === st1.parked, `sync_parked alert missing: ${JSON.stringify((await ipc('alerts:status')).alerts.map((a) => a.id))}`)
+  await waitFor(`document.body.innerText.includes('refused')`, 'header shows refused count')
+  // cloud fixed → Sync now retries the parked rows and they go through
+  poison = false
+  const st2 = await ipc('sync:now')
+  assert(st2.state === 'synced' && st2.parked === 0 && st2.pending === 0 && seen.items.includes(poisonName), `parked rows not retried: ${JSON.stringify(st2)}`)
+  assert(!(await ipc('alerts:status')).alerts.some((a) => a.id === 'sync_parked'), 'sync_parked alert should clear')
+  await ipc('menu:deleteItem', { id: poisonId })
+  await ipc('menu:deleteCategory', { id: poisonCat })
+  await ipc('sync:now')
+  await ipc('settings:set', settings0)
+  assert((await ipc('sync:status')).state === 'disabled', 'sync must be disabled again after the fake-cloud test')
+  server.close()
+  console.log('parked sync ok: refused row parked, bill behind it uploaded, retry after fix cleared it; deletes seen', seen.deletes)
+}
 
 // menu management: add a category + item with variants, edit price, delete (soft)
 const code = `SMK${Date.now() % 100000}` // unique per run; earlier runs' rows are soft-deleted but codes must still not clash

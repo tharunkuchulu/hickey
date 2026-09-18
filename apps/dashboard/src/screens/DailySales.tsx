@@ -20,6 +20,16 @@ export function DailySales({ data, from, to }: { data: RangeData; from: string; 
   const byPay = new Map(s.byPayment.map((p) => [p.key, p]))
   const oneDay = from === to
   const legsOf = (id: string) => data.payments.filter((p) => p.order_id === id)
+  const linesOf = new Map<string, string[]>()
+  const qtyOf = new Map<string, number>()
+  for (const l of data.lines) {
+    if (l.is_cancelled) continue
+    const n = l.variant_name ? `${l.name} (${l.variant_name})` : l.name
+    const list = linesOf.get(l.order_id) ?? []
+    list.push(l.qty > 1 ? `${l.qty}× ${n}` : n)
+    linesOf.set(l.order_id, list)
+    qtyOf.set(l.order_id, (qtyOf.get(l.order_id) ?? 0) + l.qty)
+  }
   const paymentText = (o: RangeData['orders'][number]) => {
     if (o.status === 'cancelled') return 'Cancelled'
     if (!isBilled(o)) return 'Not billed'
@@ -98,6 +108,7 @@ export function DailySales({ data, from, to }: { data: RangeData; from: string; 
               {!oneDay && <th className={th}>Date</th>}
               <th className={th}>Time</th>
               <th className={th}>Type</th>
+              <th className={th}>Items</th>
               <th className={`${th} text-right`}>Amount (₹)</th>
               <th className={th}>Payment</th>
               <th className={th}>Status</th>
@@ -111,6 +122,10 @@ export function DailySales({ data, from, to }: { data: RangeData; from: string; 
                 {!oneDay && <td className="px-3 py-1.5">{o.business_date}</td>}
                 <td className="px-3 py-1.5">{time(o.printed_at ?? o.created_at)}</td>
                 <td className="px-3 py-1.5">{TYPE_LABEL[o.order_type] ?? o.order_type}</td>
+                <td className="px-3 py-1.5 max-w-[320px]" title={(linesOf.get(o.id) ?? []).join(', ')}>
+                  <span className="line-clamp-2">{(linesOf.get(o.id) ?? []).join(', ') || '—'}</span>
+                  {(qtyOf.get(o.id) ?? 0) > 0 && <span className="text-gray-400 text-xs"> ({qtyOf.get(o.id)})</span>}
+                </td>
                 <td className="px-3 py-1.5 text-right font-medium">{money(o.total)}</td>
                 <td className="px-3 py-1.5">
                   <span className={`px-2 py-0.5 rounded text-xs font-medium ${paymentText(o) === 'Not Paid' ? 'bg-amber-100 text-amber-800' : isBilled(o) ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
@@ -122,7 +137,7 @@ export function DailySales({ data, from, to }: { data: RangeData; from: string; 
             ))}
             {data.orders.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-3 py-10 text-center text-gray-400">
+                <td colSpan={9} className="px-3 py-10 text-center text-gray-400">
                   No bills in this period.
                 </td>
               </tr>

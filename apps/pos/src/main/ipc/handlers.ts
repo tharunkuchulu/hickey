@@ -1,8 +1,7 @@
 import { schema, verifyPin } from '@hickey/db'
 import { appSettingsSchema, defaultAppSettings, nowIso, type AppSettings } from '@hickey/shared'
 import { and, asc, eq, isNull } from 'drizzle-orm'
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
-import { autoUpdater } from 'electron-updater'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { writeFileSync } from 'node:fs'
 import { db } from '../db'
 import { dataDir } from '../paths'
@@ -11,6 +10,8 @@ import * as menuAdmin from '../services/menu-admin'
 import * as ordersSvc from '../services/orders'
 import * as daySvc from '../services/day'
 import * as alertsSvc from '../services/alerts'
+import * as updater from '../services/updater'
+import { log, logDir } from '../services/log'
 import { dailySales, reportToCsv, runReport } from '../services/reports'
 import { reportHtml } from '../services/report-print'
 import { backupNow, listBackups } from '../services/backup'
@@ -29,8 +30,8 @@ function handle<C extends IpcChannel>(channel: C, fn: Handler<C>): void {
     try {
       return await fn(req)
     } catch (err) {
-      // Surface a readable message to the renderer; keep the stack in the main log.
-      console.error(`[ipc] ${channel} failed`, err)
+      // Surface a readable message to the renderer; keep the stack in the log file.
+      log.error('ipc', `${channel} failed`, err)
       throw new Error(err instanceof Error ? err.message : String(err))
     }
   })
@@ -84,6 +85,7 @@ export function registerIpcHandlers(): void {
   handle('app:info', () => ({
     version: app.getVersion(),
     dataDir: dataDir(),
+    logDir: logDir(),
     deviceId: loadSettings().sync.deviceId,
     isPackaged: app.isPackaged
   }))
@@ -136,6 +138,9 @@ export function registerIpcHandlers(): void {
     if (n.enabled && n.deviceToken && (!prev.enabled || prev.deviceToken !== n.deviceToken || prev.supabaseUrl !== n.supabaseUrl)) {
       enqueueAllRows()
       kickSync()
+    } else if (JSON.stringify(prev) !== JSON.stringify(n)) {
+      // Switched off or re-keyed: the header must not keep showing the old state until the next tick.
+      void syncNow()
     }
     if (prevAll.billing.dayStartMinutes !== value.billing.dayStartMinutes) {
       daySvc.notifyChanged(value)
@@ -421,17 +426,13 @@ export function registerIpcHandlers(): void {
   handle('menu:saveAddon', (input) => menuAdmin.saveAddon(input, adminOnly()))
   handle('menu:deleteAddon', ({ id }) => menuAdmin.deleteAddon(id, adminOnly()))
 
-  handle('update:check', async () => {
-    if (!app.isPackaged) return { ok: false, message: 'Updates only work in the installed app' }
-    try {
-      const r = await autoUpdater.checkForUpdates()
-      const v = r?.updateInfo.version
-      return v && v !== app.getVersion() ? { ok: true, message: `Version ${v} is downloading; it installs when the app closes.` } : { ok: true, message: `You have the latest version (${app.getVersion()})` }
-    } catch (err) {
-      return { ok: false, message: err instanceof Error ? err.message : String(err) }
-    }
+  handle('update:status', () => updater.getUpdateStatus())
+  handle('update:check', () => updater.checkNow())
+  handle('update:install', (req) => updater.installNow(req?.reason ?? 'tap'))
+  handle('app:openLogs', async () => {
+    const err = await shell.openPath(logDir())
+    return err ? { ok: false, error: err } : { ok: true }
   })
-  handle('update:install', () => autoUpdater.quitAndInstall())
 
   handle('printers:list', async () => {
     const win = BrowserWindow.getAllWindows()[0]

@@ -1,12 +1,14 @@
 import { app, BrowserWindow, shell } from 'electron'
-import { autoUpdater } from 'electron-updater'
 import { join } from 'node:path'
 import { closeDatabase, initDatabase } from './db'
 import { loadSettings, registerIpcHandlers } from './ipc/handlers'
 import { scheduleDailyBackup } from './services/backup'
 import { initSync } from './services/sync'
-import { initAlerts, setUpdateReady } from './services/alerts'
+import { initAlerts } from './services/alerts'
 import { currentBusinessDate } from './services/day'
+import { installProcessLogging, log } from './services/log'
+import { lastOrderActivityAt } from './services/orders'
+import { initUpdater } from './services/updater'
 
 // Fixed data folder (%APPDATA%\hickey-pos) so backups/restore docs never depend on the package name.
 app.setPath('userData', join(app.getPath('appData'), 'hickey-pos'))
@@ -66,6 +68,8 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(() => {
     app.setAppUserModelId('com.hickey.pos')
+    installProcessLogging()
+    log.info('app', `start ${app.getVersion()} (${app.isPackaged ? 'installed' : 'dev'})${process.argv.length > 1 ? ' args ' + process.argv.slice(1).join(' ') : ''}`)
     initDatabase()
     registerIpcHandlers()
     createWindow()
@@ -76,28 +80,20 @@ if (!app.requestSingleInstanceLock()) {
       (bd) => currentBusinessDate(loadSettings()) === bd
     )
 
-    if (app.isPackaged) {
-      // Counter PCs get the app back automatically after a reboot / power cut.
-      app.setLoginItemSettings({ openAtLogin: true, name: 'Hickey POS' })
-      // Updates come from GitHub Releases (electron-builder publish config); silent download, install on quit.
-      autoUpdater.autoDownload = true
-      autoUpdater.autoInstallOnAppQuit = true
-      autoUpdater.on('error', (err) => console.error('[updater]', err.message))
-      autoUpdater.on('update-downloaded', (info) => {
-        for (const w of BrowserWindow.getAllWindows()) w.webContents.send('event:update', { version: info.version })
-        setUpdateReady(info.version)
-      })
-      setTimeout(() => void autoUpdater.checkForUpdates().catch(() => undefined), 15_000)
-      setInterval(() => void autoUpdater.checkForUpdates().catch(() => undefined), 6 * 60 * 60_000)
-    }
+    // Counter PCs get the app back automatically after a reboot / power cut.
+    if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: true, name: 'Hickey POS' })
+    // Updates come from GitHub Releases (electron-builder publish config): services/updater.ts.
+    initUpdater({ lastOrderAt: lastOrderActivityAt })
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
     })
   })
 
-  app.on('window-all-closed', () => {
+  app.on('window-all-closed', () => app.quit())
+  // `will-quit` also fires on the updater's quitAndInstall, where `window-all-closed` is skipped.
+  app.on('will-quit', () => {
+    log.info('app', 'quitting')
     closeDatabase()
-    app.quit()
   })
 }

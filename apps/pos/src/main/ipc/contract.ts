@@ -52,10 +52,24 @@ export interface PrinterInfo {
 
 export interface SyncStatusDto {
   state: 'disabled' | 'offline' | 'syncing' | 'synced' | 'error'
+  /** Rows waiting to upload. */
   pending: number
+  /** Rows the cloud refused (data error) and set aside so the rest keeps flowing; retried hourly / on Sync now. */
+  parked: number
+  parkedError: string | null
   lastSyncAt: string | null
   error: string | null
 }
+
+/** services/updater.ts — pushed as `event:update` (with `autoInstall: true` when the counter is quiet). */
+export type UpdateStatusDto = { current: string; at: string; lastCheckedAt: string | null; message: string } & (
+  | { state: 'idle' }
+  | { state: 'checking' }
+  | { state: 'up_to_date' }
+  | { state: 'downloading'; version: string; percent: number; transferred: number; total: number | null; bps: number }
+  | { state: 'downloaded'; version: string }
+  | { state: 'error'; version?: string; error: string }
+)
 
 export interface BackupInfoDto {
   file: string
@@ -75,7 +89,7 @@ export interface DayStatusDto {
   snoozedUntil: string | null
 }
 
-export type AlertKind = 'hold_stale' | 'sync_problem' | 'print_failed' | 'day_end' | 'update_ready'
+export type AlertKind = 'hold_stale' | 'sync_problem' | 'print_failed' | 'day_end' | 'update_ready' | 'update_failed'
 export interface AlertDto {
   id: string
   kind: AlertKind
@@ -84,10 +98,10 @@ export interface AlertDto {
   detail: string
   at: string
   order?: { id: string; kotNo: number | null; tableName: string | null; total: number; items: number; status: 'held' | 'running'; ageMinutes: number; businessDate: string }
-  sync?: { state: SyncStatusDto['state']; pending: number; error: string | null }
+  sync?: { state: SyncStatusDto['state']; pending: number; parked: number; error: string | null }
   print?: { what: 'bill' | 'kot'; message: string; orderId: string | null; billNo: string | null }
   day?: { businessDate: string; endsAt: string; extended: boolean; phase: 'ending' | 'ended'; snoozed: boolean }
-  update?: { version: string }
+  update?: { version: string | null; message?: string }
 }
 /** Pushed as `event:alerts`; also the Hold badge count. */
 export interface AlertsStatusDto {
@@ -100,6 +114,7 @@ export interface AlertsStatusDto {
 export interface AppInfo {
   version: string
   dataDir: string
+  logDir: string
   deviceId: string
   isPackaged: boolean
 }
@@ -158,8 +173,10 @@ export interface IpcContract {
   /** endsAt null = back to the normal end; businessDate only when reopening the previous day. */
   'day:extend': { req: { endsAt: string | null; businessDate?: string }; res: DayStatusDto }
   'day:snooze': { req: { endsAt: string }; res: DayStatusDto }
-  'update:check': { req: void; res: { ok: boolean; message: string } }
-  'update:install': { req: void; res: void }
+  'update:status': { req: void; res: UpdateStatusDto }
+  'update:check': { req: void; res: UpdateStatusDto }
+  'update:install': { req: { reason?: 'tap' | 'idle' } | void; res: { ok: boolean; message: string } }
+  'app:openLogs': { req: void; res: { ok: boolean; error?: string } }
 }
 
 export type IpcChannel = keyof IpcContract

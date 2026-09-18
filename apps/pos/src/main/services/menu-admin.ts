@@ -88,6 +88,9 @@ export function saveItem(input: ItemInput, actor: Actor): string {
       price: variants.length ? 0 : input.price,
       foodType: input.foodType,
       isActive: input.isActive ?? existing?.isActive ?? true,
+      // Every column travels with the row: a key missing from the outbox payload reached the cloud as NULL
+      // and stalled sync for hours on 18 Sep 2026 (items.is_favourite NOT NULL).
+      isFavourite: existing?.isFavourite ?? false,
       sortOrder: existing?.sortOrder ?? maxSort + 1,
       addonGroupIds: input.addonGroupIds,
       createdAt: existing?.createdAt ?? now,

@@ -53,7 +53,7 @@ export function DashboardScreen() {
     <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-lg font-semibold">Dashboard</h1>
-        <span className="text-xs px-2 py-1 rounded-full bg-white border border-gray-200 text-gray-600">
+        <span className={`text-xs px-2 py-1 rounded-full border ${syncTone(lastSeen)}`} title="When the counter last uploaded to the cloud">
           ● POS synced {lastSeen ? relative(lastSeen) : 'never'}
         </span>
         <div className="flex-1" />
@@ -191,6 +191,15 @@ export function DashboardScreen() {
       </div>
     </div>
   )
+}
+
+/** Green when the counter uploaded in the last 15 min, amber up to 2 h, red beyond — a stalled sync must be obvious. */
+function syncTone(iso: string | null | undefined): string {
+  if (!iso) return 'bg-red-50 border-red-300 text-red-700'
+  const mins = (Date.now() - new Date(iso).getTime()) / 60000
+  if (mins <= 15) return 'bg-white border-gray-200 text-gray-600'
+  if (mins <= 120) return 'bg-amber-50 border-amber-300 text-amber-800'
+  return 'bg-red-50 border-red-300 text-red-700'
 }
 
 function relative(iso: string): string {

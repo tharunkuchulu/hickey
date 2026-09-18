@@ -119,7 +119,7 @@ export function DailySalesView({ from, to }: { from: string; to: string }) {
               <th className={th}>Time</th>
               {!oneDay && <th className={th}>Date</th>}
               <th className={th}>Type</th>
-              <th className={`${th} text-right`}>Items</th>
+              <th className={th}>Items</th>
               <th className={`${th} text-right`}>Amount (₹)</th>
               <th className={th}>Payment</th>
               <th className={th}>Paid at</th>
@@ -137,7 +137,10 @@ export function DailySalesView({ from, to }: { from: string; to: string }) {
                   <td className="px-3 py-1.5">{time(b.time)}</td>
                   {!oneDay && <td className="px-3 py-1.5">{new Date(b.time).toLocaleDateString('en-IN')}</td>}
                   <td className="px-3 py-1.5">{b.type}</td>
-                  <td className={num}>{b.items}</td>
+                  <td className="px-3 py-1.5 max-w-[360px]" title={b.itemsText}>
+                    <span className="line-clamp-2">{b.itemsText || '—'}</span>
+                    {b.items > 0 && <span className="text-gray-400 text-xs"> ({b.items})</span>}
+                  </td>
                   <td className={`${num} font-medium`}>{money(b.total)}</td>
                   <td className="px-3 py-1.5">
                     {billed ? (
