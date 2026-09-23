@@ -101,10 +101,15 @@ Prefer to build locally instead? `pnpm install && pnpm --filter @hickey/pos dist
 
 | Button | What happens | Counts as sale? |
 |---|---|---|
-| **KOT** | Kitchen slip prints; the order stays RUNNING until billed | No (until billed) |
+| **KOT** | Only the kitchen/token slip prints — but the bill number and the payment are saved, exactly like Save & Print. Saves bill paper on the ~90% of orders where nobody asks for a bill. The slip shows the amount, the payment and the bill number. | **Yes** |
 | **Save & Print** | Bill + KOT slip print | Yes |
 | **Save** | Bill is made (bill no., payment recorded) but **nothing prints**; card shows SAVED with a *Print bill* button | Yes |
 | **Hold** | Parks the order; resume from *Hold* | No (until billed) |
+
+Tick the payment (Cash / Card / UPI / Not Paid) **before** pressing KOT, the same as for Save & Print — that is what
+gets recorded. A customer who does want paper: Orders → the card's **Print bill** (or View → Print bill).
+To go back to Petpooja's old KOT (sends food only, order stays running): Settings → Billing & Calculations →
+untick *KOT also saves the bill*.
 
 **Hold / Alerts badges:** the red number on **Hold** is how many orders are parked (any day); on **Alerts** how many things
 need attention — an order on hold for over 20 minutes, sync offline with bills waiting, a print that failed, the day end

@@ -379,6 +379,41 @@ const cashAfter = await ipc('cash:summary', {})
 assert(cashAfter.expense === cashBefore.expense + 4000 && cashAfter.topUp === cashBefore.topUp + 50000 && cashAfter.expected === cashBefore.expected + 46000, `cash flow wrong: ${JSON.stringify(cashAfter)}`)
 console.log('cash flow ok: expected in drawer', cashAfter.expected)
 
+// v0.3.2: KOT = Save & Print without the bill paper — bill number, payment and the sale, only the kitchen slip
+{
+  // the switch is set explicitly, so an interrupted earlier run cannot decide what this one tests
+  const s0 = await ipc('settings:get')
+  await ipc('settings:set', { ...s0, billing: { ...s0.billing, kotBillsOrder: true } })
+  const liveBefore = await ipc('live:summary', { businessDate: bd })
+  const holdBefore = (await ipc('alerts:status')).holdCount
+  const k = await ipc('orders:kot', {
+    input: mk([{ itemId: null, name: 'Kot Only Latte', variantName: null, unitPrice: 6000, qty: 1, addons: [], notes: null }], []).input,
+    payments: [{ mode: 'card', amount: 6000 }],
+    print: false
+  })
+  assert(k.order.billNo && k.order.status === 'settled' && k.order.kotNo >= 1 && k.order.printCount === 0 && k.order.paymentSummary === 'Card',
+    `KOT should bill the order: ${JSON.stringify({ billNo: k.order.billNo, status: k.order.status, printCount: k.order.printCount, pay: k.order.paymentSummary })}`)
+  const liveAfter = await ipc('live:summary', { businessDate: bd })
+  assert(liveAfter.totalOrders === liveBefore.totalOrders + 1 && liveAfter.totalSales === liveBefore.totalSales + 6000 && liveAfter.running === liveBefore.running,
+    `KOT sale missing from live summary: ${JSON.stringify({ before: liveBefore.totalOrders, after: liveAfter.totalOrders, running: liveAfter.running })}`)
+  assert((await ipc('alerts:status')).holdCount === holdBefore, 'a KOT-billed order must not sit in the Hold badge')
+  const kotBill = (await ipc('reports:daily', { from: bd, to: bd })).bills.find((b) => b.id === k.order.id)
+  assert(kotBill && kotBill.payment === 'Card' && kotBill.itemsText === 'Kot Only Latte', `KOT sale wrong on Daily Sales: ${JSON.stringify(kotBill)}`)
+  // the token slip carries the money, because it is the only paper the customer gets
+  const kotOnlyHtml = await ipc('orders:receiptHtml', { orderId: k.order.id, what: 'kot' })
+  assert(kotOnlyHtml.includes('60.00') && kotOnlyHtml.includes('Card') && kotOnlyHtml.includes('Bill'), 'KOT slip of a billed order must show total · payment · bill no')
+
+  // Settings → Billing puts KOT back to Petpooja's "sends food only"
+  await ipc('settings:set', { ...s0, billing: { ...s0.billing, kotBillsOrder: false } })
+  const k2 = await ipc('orders:kot', { input: mk([{ itemId: null, name: 'Running Kot', variantName: null, unitPrice: 1000, qty: 1, addons: [], notes: null }], []).input, payments: [], print: false })
+  assert(!k2.order.billNo && k2.order.status === 'running', `KOT with the switch off should stay running: ${JSON.stringify({ billNo: k2.order.billNo, status: k2.order.status })}`)
+  assert(!(await ipc('orders:receiptHtml', { orderId: k2.order.id, what: 'kot' })).includes('Bill'), 'unbilled KOT slip must not print a bill line')
+  await ipc('orders:cancel', { orderId: k2.order.id, reason: 'Discarded: smoke' })
+  await ipc('settings:set', { ...s0, billing: { ...s0.billing, kotBillsOrder: true } })
+  assert((await ipc('settings:get')).billing.kotBillsOrder === true, 'kotBillsOrder not restored')
+  console.log('kot billing ok: bill', k.order.billNo, '· token', k.order.kotNo, '· Card; switch off → running')
+}
+
 const menuSnap = await ipc('menu:snapshot')
 const tea = menuSnap.items.find((i) => i.name === 'Peach Chiller')
 await ipc('menu:setItemActive', { itemId: tea.id, isActive: false })
@@ -431,12 +466,21 @@ console.log('sync disabled with', syncSt.pending, 'pending; backup', bk.file, bk
   const settings0 = await ipc('settings:get')
   assert(settings0.sync.enabled === false, 'smoke must not run with real Cloud Sync enabled on this machine')
   await ipc('settings:set', { ...settings0, sync: { ...settings0.sync, enabled: true, supabaseUrl: `http://127.0.0.1:${port}`, supabaseAnonKey: 'fake', deviceToken: 'fake-token' } })
-  const st0 = await ipc('sync:now')
+  // enabling sync kicks a drain of its own, so sync:now can return the in-flight "syncing" status
+  const drain = async () => {
+    for (let i = 0; i < 60; i++) {
+      const st = await ipc('sync:now')
+      if (st.state !== 'syncing') return st
+      await sleep(500)
+    }
+    throw new Error('sync never settled')
+  }
+  const st0 = await drain()
   assert(st0.state === 'synced' && st0.pending === 0 && st0.parked === 0, `fake cloud initial drain failed: ${JSON.stringify(st0)}`)
   const poisonCat = await ipc('menu:saveCategory', { name: 'Poison Cat' })
   const poisonId = await ipc('menu:saveItem', { categoryId: poisonCat, name: poisonName, shortCode: null, price: 100, foodType: 'veg', variants: [], addonGroupIds: [] })
   const behind = await ipc('orders:saveAndPrint', mk([{ itemId: null, name: 'Behind Poison', variantName: null, unitPrice: 1000, qty: 1, addons: [], notes: null }], [{ mode: 'cash', amount: 1000 }]))
-  const st1 = await ipc('sync:now')
+  const st1 = await drain()
   assert(st1.state === 'synced' && st1.pending === 0 && st1.parked >= 1 && /not-null/.test(st1.parkedError ?? ''), `poison row not parked: ${JSON.stringify(st1)}`)
   assert(seen.orders.includes(behind.order.id), 'the bill behind the refused row did not upload')
   assert(!seen.items.includes(poisonName), 'refused row must not count as uploaded')
@@ -445,7 +489,7 @@ console.log('sync disabled with', syncSt.pending, 'pending; backup', bk.file, bk
   await waitFor(`document.body.innerText.includes('refused')`, 'header shows refused count')
   // cloud fixed → Sync now retries the parked rows and they go through
   poison = false
-  const st2 = await ipc('sync:now')
+  const st2 = await drain()
   assert(st2.state === 'synced' && st2.parked === 0 && st2.pending === 0 && seen.items.includes(poisonName), `parked rows not retried: ${JSON.stringify(st2)}`)
   assert(!(await ipc('alerts:status')).alerts.some((a) => a.id === 'sync_parked'), 'sync_parked alert should clear')
   await ipc('menu:deleteItem', { id: poisonId })
@@ -527,7 +571,7 @@ const renderReceipt = async (html, name) => {
 }
 await renderReceipt(await ipc('orders:receiptHtml', { orderId: r1.order.id, what: 'bill' }), '08-receipt-bill')
 const kotH = await renderReceipt(await ipc('orders:receiptHtml', { orderId: r2.order.id, what: 'kot' }), '09-receipt-kot')
-assert(kotH < 120, `KOT slip should be compact, got ${kotH}px`)
+assert(kotH < 140, `KOT slip should be compact, got ${kotH}px`)
 
 console.log('SMOKE OK')
 ws.close()

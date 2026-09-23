@@ -41,6 +41,12 @@ export const appSettingsSchema = z.object({
     /** Business day boundary in minutes after midnight. Petpooja default 03:30 = 210. */
     dayStartMinutes: z.number().int().min(0).max(12 * 60).default(210),
     defaultOrderType: z.enum(['dine_in', 'pick_up', 'delivery']).default('pick_up'),
+    /**
+     * Petpooja's KOT only sends food to the kitchen and leaves the order running. At HICKEY NALSAR ~90% of
+     * orders are KOT-only (customers pay at the counter and nobody asks for bill paper), so KOT bills the
+     * order exactly like Save & Print and prints only the kitchen/token slip. Off = old running-tab behaviour.
+     */
+    kotBillsOrder: z.boolean().default(true),
     defaultPaymentMode: z.enum(['cash', 'card', 'upi', 'other', 'due', 'not_paid']).default('cash'),
     /** Payment options shown inline (Petpooja: Cash, Card, Due, Not Paid); the rest sit under "More". */
     visiblePaymentOptions: z.array(z.enum(['cash', 'card', 'due', 'not_paid', 'upi', 'part', 'other'])).default(['cash', 'card', 'due', 'not_paid']),

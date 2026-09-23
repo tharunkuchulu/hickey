@@ -235,10 +235,14 @@ export function registerIpcHandlers(): void {
     return o
   })
 
-  handle('orders:kot', async ({ input }): Promise<OrderActionResult> => {
-    const { order, kot } = ordersSvc.saveWithKot(input, ctx())
+  handle('orders:kot', async ({ input, payments = [], print = true }): Promise<OrderActionResult> => {
+    // v0.3.2: KOT = Save & Print without the bill paper. The order gets its bill number and payment and counts
+    // as a sale straight away; only the kitchen/token slip prints. Settings → Billing turns this off.
+    const bills = loadSettings().billing.kotBillsOrder
+    const { order, kot } = bills ? ordersSvc.saveAndBill(input, payments, ctx(), { print: false }) : ordersSvc.saveWithKot(input, ctx())
+    if (bills) kickSync()
     alertsSvc.refresh()
-    const printError = await printAfterBill(order, kot, { bill: false, kot: true })
+    const printError = print ? await printAfterBill(order, kot, { bill: false, kot: true }) : undefined
     return { order, printError }
   })
 

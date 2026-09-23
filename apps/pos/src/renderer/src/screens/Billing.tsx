@@ -155,14 +155,23 @@ export function BillingScreen() {
       toast.success('Order put on hold')
       cart.clear()
     })
-  // Sends the order to the kitchen and prints the KOT slip (per Settings → Print); the order stays running until billed.
+  // v0.3.2: KOT is Save & Print without the bill paper — the bill number and payment are recorded and the sale
+  // counts immediately; only the kitchen/token slip prints. (Settings → Billing can put it back to "sends food only",
+  // in which case main returns an order with no bill number and the old message is shown.)
   const doKot = () =>
     run('KOT', async () => {
-      const r = await invoke('orders:kot', { input: cart.toInput() })
+      const payments = buildPayments()
+      if (typeof payments === 'string') {
+        toast.error(payments)
+        return
+      }
+      const r = await invoke('orders:kot', { input: cart.toInput(), payments })
       if (r.printError) toast.error(r.printError)
-      toast.success(`KOT ${r.order.kotNo} sent`)
-      if (r.order.orderType === 'dine_in') cart.loadOrder(r.order)
+      else if (r.order.billNo) toast.success(`Bill ${r.order.billNoDisplay} · Token ${r.order.kotNo} · ${formatMoney(r.order.total)} — kitchen slip printed`)
+      else toast.success(`KOT ${r.order.kotNo} sent`)
+      if (!r.order.billNo && r.order.orderType === 'dine_in') cart.loadOrder(r.order)
       else cart.clear()
+      codeRef.current?.focus()
     })
   const doSaveAndPrint = () =>
     run('Save & Print', async () => {

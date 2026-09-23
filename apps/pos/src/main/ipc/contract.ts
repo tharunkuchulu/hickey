@@ -132,7 +132,7 @@ export interface IpcContract {
   'auth:logout': { req: void; res: void }
   'app:businessDate': { req: void; res: string }
   'orders:save': { req: { input: OrderInput; hold?: boolean }; res: OrderDto }
-  'orders:kot': { req: { input: OrderInput }; res: OrderActionResult }
+  'orders:kot': { req: { input: OrderInput; payments?: PaymentInput[]; print?: boolean }; res: OrderActionResult }
   /** `saveOnly` = Petpooja "Save": billed but not printed (status SAVED). `print` only controls the physical printer. */
   'orders:saveAndPrint': { req: { input: OrderInput; payments: PaymentInput[]; print?: boolean; saveOnly?: boolean }; res: OrderActionResult }
   'orders:settle': { req: { orderId: string; payments: PaymentInput[]; print?: boolean; saveOnly?: boolean }; res: OrderActionResult }

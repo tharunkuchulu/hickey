@@ -59,6 +59,20 @@
   generic-provider server: 0.3.0 → 0.3.1 downloaded, one tap, relaunched as 0.3.1 in 25 s (log shows every step).
 - `closeDatabase()` moved to `will-quit`: `window-all-closed` is skipped on `quitAndInstall`.
 - Daily Sales bills table (counter and dashboard) names the items on each bill ("2× Cappuccino (sip), Samosa").
+
+## v0.3.2 (24 Sep 2026)
+
+- **KOT bills the order** (`billing.kotBillsOrder`, default on): ~90% of HICKEY NALSAR's orders are KOT-only —
+  customers pay at the counter and nobody asks for bill paper — but Petpooja-style KOT left them RUNNING with no bill
+  number and no payment, so the money never appeared in Orders, Daily Sales, Live View or the owner dashboard.
+  `orders:kot` now calls the same `saveAndBill(..., { print: false })` as "Save" and prints only the kitchen slip;
+  the order shows as SAVED with *Print bill* for the rare customer who wants one. The payment comes from the same
+  radio Save & Print uses, and the handler kicks sync (it never did).
+  Trade-off accepted: a Dine In table cannot add to the same bill after a KOT (a second round = a second bill), the
+  rule Pick Up already followed. An exception for Dine In would have reproduced the very complaint being fixed
+  ("sometimes KOT saves, sometimes not"); the switch restores the old behaviour if table service ever needs it.
+- The KOT/token slip of a billed order carries one extra line — `Rs. 60.00 · Card · Bill ..892` — because it is the
+  only paper most customers get.
 - **Dashboard keeps itself fresh** (`lib/useLiveData.ts`): every screen re-fetches each minute while visible, on
   return to the tab and on tap of "↻ Updated HH:MM". Before, a page loaded once and the owner had to reload to see a
   bill that had been in the cloud for half an hour — which looked like a sync problem and wasn't.

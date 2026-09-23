@@ -103,6 +103,12 @@ export function kotHtml(o: OrderDto, kot: KotTicket, s: AppSettings, opts: { dup
     <div class="rule"></div>
     <table class="kot"><thead><tr><th>Item</th><th class="num">Qty.</th></tr></thead><tbody>${rows}</tbody></table>
     ${o.notes ? `<div class="bold">Note: ${e(o.notes)}</div>` : ''}
+    ${
+      // KOT-only sale (v0.3.2): this slip is the only paper the customer gets, so it carries the amount.
+      o.billNo
+        ? `<div class="row bold"><span>Rs. ${money(o.total)}${o.paymentSummary ? ` · ${e(o.paymentSummary)}` : ''}</span><span>Bill ${e(o.billNoDisplay)}</span></div>`
+        : ''
+    }
     <div class="rule"></div>`
   return receiptDocument(body, s.receipt.paperWidthMm, { compact: true })
 }

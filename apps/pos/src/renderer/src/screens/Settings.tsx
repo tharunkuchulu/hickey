@@ -128,6 +128,8 @@ export function SettingsScreen() {
             <Section title="Billing Screen">
               <Select label="Default order type" value={settings.billing.defaultOrderType} options={[['pick_up', 'Pick Up'], ['dine_in', 'Dine In'], ['delivery', 'Delivery']]} onChange={(v) => patch('billing', { defaultOrderType: v as AppSettings['billing']['defaultOrderType'] })} />
               <Select label="Default payment mode" value={settings.billing.defaultPaymentMode} options={[['cash', 'Cash (Petpooja default)'], ['card', 'Card'], ['upi', 'UPI'], ['due', 'Due'], ['not_paid', 'Not Paid'], ['other', 'Other']]} onChange={(v) => patch('billing', { defaultPaymentMode: v as AppSettings['billing']['defaultPaymentMode'] })} />
+              {/* v0.3.2: ~90% of the orders here are KOT-only, so KOT bills them too; off = Petpooja's running-tab KOT. */}
+              <Toggle label="KOT also saves the bill (prints only the kitchen slip)" checked={settings.billing.kotBillsOrder} onChange={(v) => patch('billing', { kotBillsOrder: v })} />
               <Toggle label="Cashier needs admin PIN to cancel a bill" checked={settings.billing.requireAdminPinForCancel} onChange={(v) => patch('billing', { requireAdminPinForCancel: v })} />
               <Toggle label="Cashier needs admin PIN to give a discount" checked={settings.billing.requireAdminPinForDiscount} onChange={(v) => patch('billing', { requireAdminPinForDiscount: v })} />
             </Section>
