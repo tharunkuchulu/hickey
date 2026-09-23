@@ -442,7 +442,9 @@ console.log('sync disabled with', syncSt.pending, 'pending; backup', bk.file, bk
 // v0.3.1: a row the cloud refuses (data error) is parked and the bills behind it still upload.
 // Fake Supabase on localhost: refuses any items row named 'Poison Item' with a 400 until told otherwise.
 {
-  const seen = { items: [], orders: [], deletes: 0, pings: 0 }
+  const seen = { items: [], orders: [], deletes: 0, pings: 0, info: [] }
+  // v0.3.3: the counter reports its version; a cloud without migration 0005 answers 404 and must not stall sync
+  let deviceInfo404 = true
   const poisonName = `Poison ${Date.now()}` // unique per run: earlier runs' soft-deleted rows are re-queued by enqueueAllRows
   let poison = true
   const server = http.createServer((req, res) => {
@@ -453,6 +455,11 @@ console.log('sync disabled with', syncSt.pending, 'pending; backup', bk.file, bk
       const b = body ? JSON.parse(body) : {}
       const reply = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)) }
       if (fn === 'sync_ping') { seen.pings++; return reply(200, { device: 'fake', org_id: 'x' }) }
+      if (fn === 'sync_device_info') {
+        if (deviceInfo404) return reply(404, { message: 'Could not find the function public.sync_device_info' })
+        seen.info.push({ version: b.p_version, state: b.p_update_state })
+        return reply(200, { device: 'fake', version: b.p_version })
+      }
       if (fn === 'sync_delete') { seen.deletes += b.p_ids.length; return reply(200, b.p_ids.length) }
       if (fn !== 'sync_push') return reply(404, { message: 'no such rpc' })
       if (b.p_table === 'items' && poison && b.p_rows.some((r) => r.name === poisonName)) return reply(400, { message: 'null value in column "is_favourite" of relation "items" violates not-null constraint' })
@@ -477,6 +484,8 @@ console.log('sync disabled with', syncSt.pending, 'pending; backup', bk.file, bk
   }
   const st0 = await drain()
   assert(st0.state === 'synced' && st0.pending === 0 && st0.parked === 0, `fake cloud initial drain failed: ${JSON.stringify(st0)}`)
+  // an old cloud (404 on sync_device_info) must not break the drain
+  assert(seen.info.length === 0, 'device info should not have been recorded while the cloud answers 404')
   const poisonCat = await ipc('menu:saveCategory', { name: 'Poison Cat' })
   const poisonId = await ipc('menu:saveItem', { categoryId: poisonCat, name: poisonName, shortCode: null, price: 100, foodType: 'veg', variants: [], addonGroupIds: [] })
   const behind = await ipc('orders:saveAndPrint', mk([{ itemId: null, name: 'Behind Poison', variantName: null, unitPrice: 1000, qty: 1, addons: [], notes: null }], [{ mode: 'cash', amount: 1000 }]))
@@ -495,10 +504,22 @@ console.log('sync disabled with', syncSt.pending, 'pending; backup', bk.file, bk
   await ipc('menu:deleteItem', { id: poisonId })
   await ipc('menu:deleteCategory', { id: poisonCat })
   await ipc('sync:now')
+
+  // cloud with migration 0005 (v0.3.3): the next sync records the version + what the updater is doing
+  deviceInfo404 = false
+  const appVersion = (await ipc('app:info')).version
+  const held4 = await ipc('orders:save', { input: mk([{ itemId: null, name: 'Version Ping', variantName: null, unitPrice: 100, qty: 1, addons: [], notes: null }], []).input, hold: true })
+  const st3 = await drain()
+  assert(st3.state === 'synced', `drain after enabling device info failed: ${JSON.stringify(st3)}`)
+  assert(seen.info.some((i) => i.version === appVersion), `device info not reported: ${JSON.stringify(seen.info)} (expected ${appVersion})`)
+  await ipc('orders:cancel', { orderId: held4.id, reason: 'Discarded: smoke' })
+  await drain()
+
   await ipc('settings:set', settings0)
   assert((await ipc('sync:status')).state === 'disabled', 'sync must be disabled again after the fake-cloud test')
   server.close()
   console.log('parked sync ok: refused row parked, bill behind it uploaded, retry after fix cleared it; deletes seen', seen.deletes)
+  console.log('device info ok: reported', JSON.stringify(seen.info[0]), '· 404 from an old cloud ignored')
 }
 
 // menu management: add a category + item with variants, edit price, delete (soft)

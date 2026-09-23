@@ -76,5 +76,17 @@
 - **Dashboard keeps itself fresh** (`lib/useLiveData.ts`): every screen re-fetches each minute while visible, on
   return to the tab and on tap of "↻ Updated HH:MM". Before, a page loaded once and the owner had to reload to see a
   bill that had been in the cloud for half an hour — which looked like a sync problem and wasn't.
+## v0.3.3 (24 Sep 2026)
+
+- **Counters report their own version** (`sync_device_info`, migration 0005 -> `devices.app_version`,
+  `app_version_at`, `update_state`). "Which version is the counter on?" twice needed someone standing at the
+  counter, and a terminal sat on v0.2.0 with a broken updater for days unnoticed. `services/sync.ts` sends it
+  after a successful drain (when it changed, otherwise every 6 h) and **swallows its own failures**: a project
+  that has not run migration 0005 answers 404, and bills must keep flowing regardless.
+- `services/updater.ts` feeds it a short state ("downloading 43%", "0.3.4 ready", "error: no internet"), so a
+  stuck rollout is visible from the owner's phone instead of requiring a trip to the cafe.
+- The dashboard's sync pill gains `- Counter 1 - v0.3.3` plus a chip while an update is in progress;
+  `fetchDevices()` falls back to the old two columns when the project has not run 0005 yet.
+
 - Dev note: the Claude desktop app is an MSIX package, so tools launched from it see a virtualized `%APPDATA%`; the
   real counter/laptop data folder is only visible to Explorer-launched processes (docs in memory, not a product concern).

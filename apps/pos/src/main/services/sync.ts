@@ -6,7 +6,7 @@
 import { schema, type HickeyDb } from '@hickey/db'
 import { nowIso, type AppSettings } from '@hickey/shared'
 import { asc, eq, inArray, sql } from 'drizzle-orm'
-import { BrowserWindow } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { db as getDb } from '../db'
 import { log } from './log'
 
@@ -29,6 +29,16 @@ let running = false
 let backoffUntil = 0
 let backoffMs = 5_000
 let parkedRetryAt = 0
+/**
+ * What this terminal should tell the cloud about itself (v0.3.3). Without it "which version is the counter on?"
+ * needed someone standing at the counter, so a stale build could hide for days (18 Sep 2026: v0.2.0).
+ */
+let appState: { version: string; updateState: string | null } = { version: '', updateState: null }
+let reportedState = ''
+let reportedAt = 0
+let infoWarnedAt = 0
+const REPORT_EVERY_MS = 6 * 3600_000
+const INFO_WARN_EVERY_MS = 3600_000
 let loadSettings: () => AppSettings = () => {
   throw new Error('sync not initialised')
 }
@@ -244,6 +254,7 @@ export async function syncNow(opts: { force?: boolean } = {}): Promise<SyncStatu
         getDb().delete(syncOutbox).where(inArray(syncOutbox.seq, unknown.map((r) => r.seq))).run()
       }
     }
+    await reportDeviceInfo(s)
     const at = nowIso()
     getDb().insert(syncState).values({ key: 'lastSyncAt', value: at }).onConflictDoUpdate({ target: syncState.key, set: { value: at } }).run()
     backoffMs = 5_000
@@ -265,6 +276,34 @@ export async function syncNow(opts: { force?: boolean } = {}): Promise<SyncStatu
     running = false
   }
   return getSyncStatus()
+}
+
+/** Version / updater state to report with the next sync (called at app start and on every updater change). */
+export function noteAppState(patch: Partial<{ version: string; updateState: string | null }>): void {
+  appState = { ...appState, ...patch }
+}
+
+/**
+ * Tell the cloud which version this counter runs and what its updater is doing. Never fails a sync: a project
+ * that has not run migration 0005 answers 404, and bills must keep flowing regardless.
+ */
+async function reportDeviceInfo(s: AppSettings['sync']): Promise<void> {
+  const version = appState.version || app.getVersion()
+  const key = `${version}|${appState.updateState ?? ''}`
+  if (key === reportedState && Date.now() - reportedAt < REPORT_EVERY_MS) return
+  try {
+    await rpc(s, 'sync_device_info', { p_token: s.deviceToken, p_version: version, p_update_state: appState.updateState }, 10_000)
+    reportedState = key
+    reportedAt = Date.now()
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    // Old cloud (no migration 0005) or a blip. Keep trying on later syncs so the dashboard fills in as soon as
+    // the migration lands, but say so in the log at most once an hour.
+    if (Date.now() - infoWarnedAt > INFO_WARN_EVERY_MS) {
+      infoWarnedAt = Date.now()
+      log.warn('sync', `device info not recorded: ${msg}`)
+    }
+  }
 }
 
 /** Called after billing actions so a sale reaches the cloud within seconds when online. */

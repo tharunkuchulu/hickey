@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { closeDatabase, initDatabase } from './db'
 import { loadSettings, registerIpcHandlers } from './ipc/handlers'
 import { scheduleDailyBackup } from './services/backup'
-import { initSync } from './services/sync'
+import { initSync, noteAppState } from './services/sync'
 import { initAlerts } from './services/alerts'
 import { currentBusinessDate } from './services/day'
 import { installProcessLogging, log } from './services/log'
@@ -73,6 +73,7 @@ if (!app.requestSingleInstanceLock()) {
     initDatabase()
     registerIpcHandlers()
     createWindow()
+    noteAppState({ version: app.getVersion() })
     initSync(loadSettings)
     initAlerts(loadSettings)
     scheduleDailyBackup(

@@ -14,6 +14,7 @@ import { autoUpdater, type UpdateInfo } from 'electron-updater'
 import type { UpdateStatusDto } from '../ipc/contract'
 import * as alerts from './alerts'
 import { log, updaterLogger } from './log'
+import { noteAppState } from './sync'
 
 const FIRST_CHECK_MS = 15_000
 const CHECK_EVERY_MS = 6 * 60 * 60_000
@@ -47,6 +48,24 @@ function describe(s: UpdateStatusDto): string {
   }
 }
 
+/** Four words for the cloud/dashboard: "up to date", "downloading 43%", "0.3.4 ready", "error: no internet". */
+function shortState(s: UpdateStatusDto): string {
+  switch (s.state) {
+    case 'downloading':
+      return `downloading ${s.percent}%`
+    case 'downloaded':
+      return `${s.version} ready`
+    case 'error':
+      return `error: ${s.error}`
+    case 'checking':
+      return 'checking'
+    case 'up_to_date':
+      return 'up to date'
+    default:
+      return enabled ? 'idle' : 'dev build'
+  }
+}
+
 /** Plain words for the errors electron-updater throws. */
 function friendly(err: unknown): string {
   const m = err instanceof Error ? err.message : String(err)
@@ -63,6 +82,8 @@ type StatePatch = DistributiveOmit<UpdateStatusDto, 'current' | 'at' | 'message'
 function set(next: StatePatch, force = true): void {
   const merged = { ...next, current: app.getVersion(), at: new Date().toISOString(), lastCheckedAt: next.lastCheckedAt ?? status.lastCheckedAt } as UpdateStatusDto
   status = { ...merged, message: describe(merged) }
+  // The owner dashboard shows this, so a rollout that is stuck is visible without going to the cafe.
+  noteAppState({ version: app.getVersion(), updateState: shortState(status) })
   const now = Date.now()
   if (!force && now - lastBroadcast < 500) return
   lastBroadcast = now

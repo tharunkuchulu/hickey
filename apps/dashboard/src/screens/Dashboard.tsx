@@ -2,7 +2,7 @@ import { FOUR_HOUR_BUCKETS, itemPerformance, salesByDay, salesByFourHours, sales
 import { formatMoney } from '@hickey/shared/money'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Freshness } from '../components/Freshness'
-import { addDays, fetchCashMovements, fetchDevices, fetchRange, resolveTodayBusinessDate, todayBusinessDate, type CashMovementRow, type RangeData } from '../lib/data'
+import { addDays, fetchCashMovements, fetchDevices, fetchRange, resolveTodayBusinessDate, todayBusinessDate, type CashMovementRow, type DeviceRow, type RangeData } from '../lib/data'
 import { useLiveData } from '../lib/useLiveData'
 
 const TYPE_LABEL: Record<string, string> = { dine_in: 'Dine In', pick_up: 'Pick Up', delivery: 'Delivery' }
@@ -28,7 +28,7 @@ export function DashboardScreen() {
   const day: RangeData | null = live.data?.day ?? null
   const trend: RangeData | null = live.data?.trend ?? null
   const cash: CashMovementRow[] = live.data?.cash ?? []
-  const devices: Array<{ label: string; last_seen_at: string | null }> = live.data?.devices ?? []
+  const devices: DeviceRow[] = live.data?.devices ?? []
   const err = live.err
 
   const stats = useMemo(() => (day ? salesStats(day.orders, day.payments) : null), [day])
@@ -36,6 +36,10 @@ export function DashboardScreen() {
   const days = useMemo(() => (trend ? salesByDay(trend.orders) : []), [trend])
   const items = useMemo(() => (day ? itemPerformance(day.orders, day.lines) : []), [day])
   const lastSeen = devices.map((d) => d.last_seen_at).filter(Boolean).sort().pop()
+  // v0.3.3+: the counter reports its version and what its updater is doing, so a stuck rollout is visible here.
+  const counter = devices.find((d) => d.last_seen_at === lastSeen) ?? devices[0]
+  const updateState = counter?.update_state ?? null
+  const updateBusy = updateState !== null && !/^(up to date|idle|checking|dev build)$/.test(updateState)
 
   if (err && !stats) return <div className="p-6 text-red">{err}</div>
   if (!stats) return <div className="p-6 text-gray-400">Loading…</div>
@@ -52,7 +56,16 @@ export function DashboardScreen() {
         <h1 className="text-lg font-semibold">Dashboard</h1>
         <span className={`text-xs px-2 py-1 rounded-full border ${syncTone(lastSeen)}`} title="When the counter last uploaded to the cloud">
           ● POS synced {lastSeen ? relative(lastSeen) : 'never'}
+          {counter?.app_version ? ` · ${counter.label} · v${counter.app_version}` : ''}
         </span>
+        {updateBusy && (
+          <span
+            className={`text-xs px-2 py-1 rounded-full border ${updateState.startsWith('error') ? 'bg-red-50 border-red-300 text-red-700' : 'bg-blue-50 border-blue-300 text-blue-800'}`}
+            title="What the counter's auto-update is doing"
+          >
+            {updateState}
+          </span>
+        )}
         <Freshness at={live.at} busy={live.busy} onRefresh={live.refresh} />
         {err && <span className="text-xs text-red">Refresh failed: {err}</span>}
         <div className="flex-1" />

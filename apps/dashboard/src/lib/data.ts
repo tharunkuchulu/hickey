@@ -107,8 +107,21 @@ export async function fetchCashMovements(from: string, to: string): Promise<Cash
   return (data ?? []) as CashMovementRow[]
 }
 
-export async function fetchDevices(): Promise<Array<{ label: string; last_seen_at: string | null }>> {
-  const { data, error } = await supabase().from('devices').select('label,last_seen_at')
-  if (error) throw new Error(error.message)
-  return (data ?? []) as Array<{ label: string; last_seen_at: string | null }>
+export interface DeviceRow {
+  label: string
+  last_seen_at: string | null
+  /** v0.3.3+ counters report these; older ones (and projects without migration 0005) leave them null. */
+  app_version: string | null
+  update_state: string | null
+}
+
+export async function fetchDevices(): Promise<DeviceRow[]> {
+  const { data, error } = await supabase().from('devices').select('label,last_seen_at,app_version,update_state')
+  // A project that has not run migration 0005 has no such columns — show the counter without them.
+  if (error) {
+    const { data: basic, error: basicErr } = await supabase().from('devices').select('label,last_seen_at')
+    if (basicErr) throw new Error(basicErr.message)
+    return ((basic ?? []) as Array<{ label: string; last_seen_at: string | null }>).map((d) => ({ ...d, app_version: null, update_state: null }))
+  }
+  return (data ?? []) as DeviceRow[]
 }

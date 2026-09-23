@@ -10,8 +10,8 @@ Do the steps in order; each one says what to copy for the next.
 1. Go to https://supabase.com → **Start your project** → sign up (GitHub or email).
 2. **New project** → Name `hickey` · Region **Mumbai (ap-south-1)** · generate a database password (save it) · Plan **Free** → Create. Wait ~2 min.
 3. Left menu **SQL Editor** → **New query** → paste the whole file `supabase/migrations/0001_init.sql` → **Run**. (Creates tables, security rules, sync functions.)
-   Then run **every later file in `supabase/migrations/` in order** (0002 … 0004) — each one is safe to re-run.
-   *HICKEY NALSAR: 0001–0004 applied (0004 on 18 Sep 2026 23:20).*
+   Then run **every later file in `supabase/migrations/` in order** (0002 … 0005) — each one is safe to re-run.
+   *HICKEY NALSAR: 0001–0004 applied (0004 on 18 Sep 2026 23:20); 0005 with the v0.3.3 release.*
 4. Same SQL editor, run and **copy the two results**:
    ```sql
    insert into orgs (name) values ('HICKEY NALSAR') returning id;     -- → ORG_ID
@@ -165,6 +165,14 @@ never touched by an update.
 **Terminals still on 0.2.0 / 0.3.0** have the old updater (no progress, download restarts from zero on every
 relaunch). Get them onto 0.3.1 once by hand: Chrome → https://github.com/tharunkuchulu/hickey/releases/latest →
 download `Hickey-POS-Setup-0.3.1.exe` → close Hickey POS → run it → Next → Install. From then on it is automatic.
+
+**From the phone:** the dashboard's grey pill shows which version each counter runs and what its updater is
+doing — `● POS synced 2 mins ago · Counter 1 · v0.3.3`, plus a blue chip like *downloading 43%* / *0.3.4 ready*
+or a red *error: no internet* while an update is in progress (needs migration 0005 and a counter on v0.3.3+).
+
+**From the phone:** the dashboard pill shows which version each counter runs and what its updater is doing -
+`POS synced 2 mins ago - Counter 1 - v0.3.3`, plus a chip like *downloading 43%* / *0.3.4 ready* / *error: no
+internet* while an update is on its way (needs migration 0005 and a counter on v0.3.3 or later).
 
 **Log file:** ☰ → Settings → About → **Open folder** (`%APPDATA%\hickey-pos\logs\hickey.log`) — every update
 step, sync problem and app error is written there. When something is odd, send that file.
